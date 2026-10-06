@@ -12,6 +12,7 @@ Python ideas used here:
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 from typing import Literal
 
@@ -266,9 +267,29 @@ def _find_source_checkout() -> Path | None:
 _SOURCE_CHECKOUT = _find_source_checkout()
 
 
+def user_data_dir() -> Path:
+    """The usual per-user place for an installed program's data, which differs by operating system.
+
+    Windows: ``%LOCALAPPDATA%\\LemonRind`` (the *Local* one, because the data can be large and should not roam with a
+    network profile). macOS: ``~/Library/Application Support/LemonRind``. Linux and the rest: ``$XDG_DATA_HOME/lemonrind``,
+    which is ``~/.local/share/lemonrind`` unless that variable says otherwise.
+    """
+    home = Path.home()
+    if sys.platform == "win32":
+        return Path(os.environ.get("LOCALAPPDATA") or home / "AppData" / "Local") / "LemonRind"
+    if sys.platform == "darwin":
+        return home / "Library" / "Application Support" / "LemonRind"
+    return Path(os.environ.get("XDG_DATA_HOME") or home / ".local" / "share") / "lemonrind"
+
+
 def default_data_dir(*, source_checkout: Path | None = _SOURCE_CHECKOUT) -> Path:
-    """The data folder used when nothing says otherwise: ``<project>/data`` in a source checkout, else ``./data``."""
-    base = source_checkout / "data" if source_checkout is not None else Path("data")
+    """The data folder used when nothing says otherwise.
+
+    In a source checkout it is ``<project>/data``. An installed copy (``pipx install`` or ``uv tool install``) has no
+    project folder, and a folder relative to wherever it was started from would give a different set of chats for
+    every starting place, so it uses a fixed per-user folder instead (``user_data_dir``).
+    """
+    base = source_checkout / "data" if source_checkout is not None else user_data_dir()
     return base.expanduser().resolve()
 
 
@@ -302,7 +323,7 @@ def resolve_data_dir(
     3. the folder chosen in Settings > Storage (a ``data_location.txt`` in the default folder),
     4. ``<project>/data`` when running from a source checkout, so the same settings are used no matter
        which folder you start the app from,
-    5. otherwise ``./data`` in the current folder.
+    5. otherwise (an installed copy) a fixed per-user folder: see ``user_data_dir``.
 
     The whole app lives in one portable folder (database, settings, generated files), as in the other
     editions: copy it somewhere else and everything travels with it.

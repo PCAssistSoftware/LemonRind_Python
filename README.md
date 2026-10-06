@@ -57,6 +57,19 @@ lemonrind-web --base-url http://my-server:13305/v1/
 
 The default is `http://localhost:13305/v1/`. 
 
+### Install it as a command (any system)
+
+If you would rather have a `lemonrind-web` command that works from any folder, with no project folder to keep, install it with [uv](https://docs.astral.sh/uv/) or [pipx](https://pipx.pypa.io/). Each puts the app in its own private environment, so it cannot clash with anything else on the computer:
+
+```bash
+uv tool install git+https://github.com/PCAssistSoftware/LemonRind_Python
+lemonrind-web                    # or: lemonrind  for the terminal chat
+```
+
+`pipx install git+https://github.com/PCAssistSoftware/LemonRind_Python` does the same. uv has one advantage: if Python 3.12 or newer is not installed, it fetches one for you. If the command is not found afterwards, run `uv tool update-shell` (or `pipx ensurepath`) and open a new terminal. Behind an antivirus program that scans secure connections, add `--system-certs` to the uv command.
+
+To update: `uv tool upgrade lemonrind` (or `pipx upgrade lemonrind`). To remove it: `uv tool uninstall lemonrind` (or `pipx uninstall lemonrind`). Your chats and settings are kept in the data folder (see below), so neither touches them.
+
 ### Using it from another computer or a phone
 
 By default the web app listens on this computer only. To share it, set a password first, then listen on the network:
@@ -152,7 +165,7 @@ Every screen, including all fourteen Settings sections, the phone layout and the
 Almost everything is in the **Settings** dialog (the gear in the header), laid out in sections: Lemonade, Assistant, Persona, Interface, Storage, Web search, File system access, Image generation,
 Memory, Auto-backup, Modules, Knowledge bases, MCP servers and Scheduler. They are saved in `settings.json` in the data folder, which you can also edit by hand.
 
-The data folder is `data/` in the project folder. To use another place, pass `--data-dir`, set `LEMONRIND_DATA_DIR`, or choose it in Settings > Storage. The app's own log is
+The data folder is `data/` in the project folder when you run from a checkout. An installed copy (see above) has no project folder, so it uses a fixed place for your user instead: `%LOCALAPPDATA%\LemonRind` on Windows, `~/Library/Application Support/LemonRind` on macOS and `~/.local/share/lemonrind` on Linux. To use another place, pass `--data-dir`, set `LEMONRIND_DATA_DIR`, or choose it in Settings > Storage. The app's own log is
 `data/logs/lemonrind.log`.
 
 | Option | For | Meaning |

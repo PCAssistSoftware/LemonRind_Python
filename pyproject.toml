@@ -8,7 +8,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "lemonrind"
-version = "0.1.0"
+version = "0.2.0"
 description = "Lemon Rind - a local AI agent for Lemonade Server (Python edition)"
 readme = "README.md"
 license = "MIT"

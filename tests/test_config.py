@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+from lemonrind import config
 from lemonrind.config import (
     DATA_DIR_ENV,
     LOCATION_FILE_NAME,
@@ -17,6 +18,7 @@ from lemonrind.config import (
     read_data_location,
     resolve_data_dir,
     settings_path,
+    user_data_dir,
     write_data_location,
 )
 
@@ -78,7 +80,7 @@ def test_data_dir_precedence(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
     monkeypatch.delenv(DATA_DIR_ENV)
     assert resolve_data_dir(source_checkout=checkout) == (checkout / "data").resolve()
-    assert resolve_data_dir(source_checkout=None) == Path("data").resolve()
+    assert resolve_data_dir(source_checkout=None) == user_data_dir().resolve()
 
 
 def test_running_from_a_checkout_uses_the_project_data_folder(monkeypatch: pytest.MonkeyPatch):
@@ -153,3 +155,59 @@ def test_backup_settings_have_sensible_limits():
         BackupSettings(interval_days=0)
     with pytest.raises(ValidationError):
         BackupSettings(keep_count=1000)
+
+
+def test_an_installed_copy_uses_a_fixed_per_user_folder_wherever_it_is_started_from(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.delenv(DATA_DIR_ENV, raising=False)
+    monkeypatch.setattr(
+        config.Path, "home", lambda: tmp_path / "home"
+    )  # nothing real is read or written
+    monkeypatch.setattr(config.sys, "platform", "linux")
+    monkeypatch.delenv("XDG_DATA_HOME", raising=False)
+    first, second = tmp_path / "a", tmp_path / "b"
+    first.mkdir()
+    second.mkdir()
+
+    monkeypatch.chdir(first)
+    here = resolve_data_dir(source_checkout=None)
+    monkeypatch.chdir(second)
+    there = resolve_data_dir(source_checkout=None)
+
+    assert here == there == (tmp_path / "home" / ".local" / "share" / "lemonrind").resolve()
+
+
+@pytest.mark.parametrize(
+    ("platform", "variable", "expected"),
+    [
+        ("win32", "LOCALAPPDATA", ("custom", "LemonRind")),
+        ("linux", "XDG_DATA_HOME", ("custom", "lemonrind")),
+    ],
+)
+def test_the_per_user_folder_follows_the_systems_own_setting(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    platform: str,
+    variable: str,
+    expected: tuple[str, str],
+):
+    monkeypatch.setattr(config.sys, "platform", platform)
+    monkeypatch.setenv(variable, str(tmp_path / "custom"))
+    assert user_data_dir() == tmp_path / Path(*expected)
+
+
+def test_the_per_user_folder_has_sensible_defaults_without_those_settings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    home = tmp_path / "home"
+    monkeypatch.setattr(config.Path, "home", lambda: home)
+    for variable in ("LOCALAPPDATA", "XDG_DATA_HOME"):
+        monkeypatch.delenv(variable, raising=False)
+
+    monkeypatch.setattr(config.sys, "platform", "win32")
+    assert user_data_dir() == home / "AppData" / "Local" / "LemonRind"
+    monkeypatch.setattr(config.sys, "platform", "darwin")
+    assert user_data_dir() == home / "Library" / "Application Support" / "LemonRind"
+    monkeypatch.setattr(config.sys, "platform", "linux")
+    assert user_data_dir() == home / ".local" / "share" / "lemonrind"

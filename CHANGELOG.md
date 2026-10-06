@@ -2,6 +2,16 @@
 
 What changed in each version of the Python edition, newest first. Each entry is dated, and a change is added here when it is pushed.
 
+## 0.2.0 - 06-10-2026
+
+### Added
+
+- **Install as a command** with `uv tool install` or `pipx install` straight from GitHub, so `lemonrind-web` and `lemonrind` work from any folder (see the README).
+
+### Changed
+
+- **An installed copy keeps its data in a fixed per-user folder** (`%LOCALAPPDATA%\LemonRind` on Windows, `~/Library/Application Support/LemonRind` on macOS, `~/.local/share/lemonrind` on Linux), where it used to use a `data` folder in whatever folder it was started from. Running from a source checkout is unchanged: the data is still in the project's `data` folder.
+
 ## 0.1.0 - 06-10-2026
 
 The first version of the Python edition.
