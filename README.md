@@ -177,6 +177,8 @@ of libraries is in `pyproject.toml`.
 - The launcher script `lemonrind.sh` has been run on Linux and under Git Bash on Windows; macOS is not yet tested
 - The database is the Python edition's own design: its data folder is not interchangeable with the .NET editions'
 
+See [`CHANGELOG.md`](CHANGELOG.md) for what changed in each version.
+
 ## Develop it
 
 Using VS Code? The folder includes a `.vscode` setup (run and debug, the Testing panel, Ruff and mypy).
