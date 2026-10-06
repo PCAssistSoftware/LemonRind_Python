@@ -22,6 +22,7 @@ Python / NiceGUI ideas used here:
 from __future__ import annotations
 
 import os
+import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -205,11 +206,17 @@ def build_interface(settings: Settings) -> Applier:
 
 
 def human_size(size: int) -> str:
+    """A size in friendly units, counted the way this computer's own file manager counts them.
+
+    Windows counts 1 KB as 1,024 bytes; Linux and macOS count 1 kB as 1,000. Using the same rule as the file manager
+    means the figures here match the ones you see there (a file of 222,500 bytes is "222.5 KB" on Linux).
+    """
+    base = 1024 if sys.platform == "win32" else 1000
     value = float(size)
     for unit in ("bytes", "KB", "MB", "GB"):
-        if value < 1024 or unit == "GB":
+        if value < base or unit == "GB":
             return f"{int(value)} {unit}" if unit == "bytes" else f"{value:.1f} {unit}"
-        value /= 1024
+        value /= base
     return f"{value:.1f} GB"  # unreachable; keeps the type checker content
 
 
@@ -225,6 +232,32 @@ def folder_size(path: Path) -> int:
         except OSError:
             continue
     return total
+
+
+def storage_breakdown(data_dir: Path) -> tuple[list[tuple[str, int]], int]:
+    """The rows for "What is using the space", and the total: every row adds up to the total.
+
+    The database is the main file plus its two side files (``-wal`` and ``-shm``). Whatever the named rows do not
+    cover (the settings file, the session secret, anything else) is shown as "Other", so nothing is left unexplained.
+    """
+    database = sum(
+        folder_size(path)
+        for path in data_dir.glob(config.DATABASE_FILE_NAME + "*")
+        if path.is_file()
+    )
+    rows = [
+        ("Database", database),
+        ("Knowledge bases", folder_size(data_dir / "knowledge")),
+        ("Generated images", folder_size(data_dir / "images")),
+        ("Attached pictures", folder_size(data_dir / "attachments")),
+        ("Workspace files", folder_size(data_dir / "workspace")),
+        ("Logs", folder_size(data_dir / "logs")),
+    ]
+    total = folder_size(data_dir)
+    other = total - sum(size for _, size in rows)
+    if other > 0:
+        rows.append(("Other (settings and the rest)", other))
+    return rows, total
 
 
 def build_storage(data_dir: Path) -> Applier:
@@ -250,21 +283,14 @@ def build_storage(data_dir: Path) -> Applier:
     )
 
     ui.label("What is using the space").classes("text-weight-medium q-mt-sm")
-    for label, relative in (
-        ("Database", config.DATABASE_FILE_NAME),
-        ("Generated images", "images"),
-        ("Workspace files", "workspace"),
-        ("Logs", "logs"),
-    ):
+    rows, total = storage_breakdown(data_dir)
+    for label, size in rows:
         with ui.row().classes("w-full justify-between"):
             ui.label(label)
-            size = folder_size(data_dir / relative)
-            if relative == config.DATABASE_FILE_NAME:  # the database also has its -wal side file
-                size += folder_size(data_dir / (relative + "-wal"))
             ui.label(human_size(size)).classes("lr-muted")
     with ui.row().classes("w-full justify-between"):
         ui.label("Everything").classes("text-weight-medium")
-        ui.label(human_size(folder_size(data_dir))).classes("text-weight-medium")
+        ui.label(human_size(total)).classes("text-weight-medium").mark("storage-total")
 
     def apply() -> str | None:
         text = (location.value or "").strip()

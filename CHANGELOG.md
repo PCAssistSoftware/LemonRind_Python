@@ -2,6 +2,12 @@
 
 What changed in each version of the Python edition, newest first. Each entry is dated, and a change is added here when it is pushed.
 
+## 0.2.1 - 06-10-2026
+
+### Fixed
+
+- **Settings > Storage now adds up.** "What is using the space" gave the database's main file and one of its two side files, left out the knowledge bases, attached pictures and settings, and counted in units that did not match the computer's file manager. The database now includes both side files, knowledge bases and attached pictures have their own rows, anything else is listed as "Other", and the rows add up to the total. Sizes use the same units as the file manager: 1 KB is 1,024 bytes on Windows and 1,000 bytes on Linux and macOS.
+
 ## 0.2.0 - 06-10-2026
 
 ### Added

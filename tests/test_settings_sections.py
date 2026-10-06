@@ -16,7 +16,11 @@ from lemonrind.modules import MemoryModule
 from lemonrind.modules.base import ChatContext
 from lemonrind.webui.context import AppContext
 from lemonrind.webui.inspectors import filter_problems, read_tail
-from lemonrind.webui.settings_sections import folder_size, human_size
+from lemonrind.webui.settings_sections import (
+    folder_size,
+    human_size,
+    storage_breakdown,
+)
 from tests.conftest import open_section
 
 
@@ -276,10 +280,13 @@ async def test_the_storage_section_shows_the_folder_and_what_uses_the_space(
 ):
     (tmp_path / "images").mkdir()
     (tmp_path / "images" / "x.png").write_bytes(b"x" * 2048)
+    (tmp_path / "knowledge").mkdir(exist_ok=True)  # the app already made it
+    (tmp_path / "knowledge" / "garden-1a2b3c4d.kb").write_bytes(b"k" * 5000)
     await open_section(user, "storage")
 
     await user.should_see("What is using the space")
     await user.should_see("Generated images")
+    await user.should_see("Knowledge bases")  # the knowledge base files have a row of their own
     await user.should_see("2.0 KB")
     assert box(user, "storage-current").text == str(tmp_path)  # type: ignore[attr-defined]
 
@@ -328,12 +335,18 @@ async def test_an_unusable_data_folder_is_reported_and_nothing_is_saved(
     assert web.settings.assistant.system_prompt != "Should not be kept."
 
 
-def test_sizes_are_shown_in_friendly_units(tmp_path: Path):
+def test_sizes_are_shown_in_friendly_units(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(
+        "sys.platform", "win32"
+    )  # Windows counts 1 KB as 1,024 bytes, like its file manager
     assert (
         human_size(0) == "0 bytes"
         and human_size(1536) == "1.5 KB"
         and human_size(5 * 1024**2) == "5.0 MB"
     )
+    monkeypatch.setattr("sys.platform", "linux")  # Linux and macOS count 1 kB as 1,000 bytes
+    assert human_size(222_500) == "222.5 KB" and human_size(1536) == "1.5 KB"
+    assert human_size(5_000_000) == "5.0 MB" and human_size(999) == "999 bytes"
     (tmp_path / "sub").mkdir()
     (tmp_path / "sub" / "a").write_bytes(b"12345")
     (tmp_path / "b").write_bytes(b"123")
@@ -476,3 +489,38 @@ async def test_the_apps_own_log_can_be_cleared_after_asking(
     user.find(marker="dialog-ok").click()
     await user.should_see("(nothing logged yet)")
     assert log_file.read_text(encoding="utf-8") == ""
+
+
+def test_the_storage_rows_add_up_to_the_total_and_explain_every_file(tmp_path: Path):
+    (tmp_path / "lemonrind.db").write_bytes(b"d" * 4000)
+    (tmp_path / "lemonrind.db-wal").write_bytes(
+        b"w" * 220_000
+    )  # the database's side files count as the database
+    (tmp_path / "lemonrind.db-shm").write_bytes(b"s" * 32_000)
+    (tmp_path / "settings.json").write_bytes(b"x" * 1900)
+    (tmp_path / "session_secret").write_bytes(b"k" * 64)
+    for folder, size in (("knowledge", 5000), ("images", 700), ("attachments", 300), ("logs", 73)):
+        (tmp_path / folder).mkdir()
+        (tmp_path / folder / "file").write_bytes(b"f" * size)
+    (tmp_path / "workspace").mkdir()  # empty folders have no size
+
+    rows, total = storage_breakdown(tmp_path)
+
+    sizes = dict(rows)
+    assert sizes["Database"] == 256_000
+    assert sizes["Knowledge bases"] == 5000 and sizes["Generated images"] == 700
+    assert (
+        sizes["Attached pictures"] == 300 and sizes["Workspace files"] == 0 and sizes["Logs"] == 73
+    )
+    assert sizes["Other (settings and the rest)"] == 1964  # settings.json and the session secret
+    assert sum(sizes.values()) == total == folder_size(tmp_path)
+
+
+def test_with_nothing_unexplained_there_is_no_other_row(tmp_path: Path):
+    (tmp_path / "lemonrind.db").write_bytes(b"d" * 10)
+
+    rows, total = storage_breakdown(tmp_path)
+
+    assert [label for label, _ in rows][0] == "Database"
+    assert not any(label.startswith("Other") for label, _ in rows)
+    assert total == 10
