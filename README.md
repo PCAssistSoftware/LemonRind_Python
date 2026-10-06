@@ -17,37 +17,84 @@ Lemon Rind also comes in [WPF, Avalonia and Blazor editions](https://github.com/
 
 ## What you need
 
-- **Python 3.12 or newer**
 - A running **[Lemonade Server](https://lemonade-server.ai/)** (on this computer or on your network) with at least one chat model downloaded. A model that supports tool calling, such as
   `Qwen3-8B-GGUF`, gives the best results
+- **Python 3.12 or newer** (if you install with uv, it fetches Python for you)
+- **[uv](https://docs.astral.sh/uv/)** or **[pipx](https://pipx.pypa.io/)** for the easiest install (Option 1 below), or **git** (or just a ZIP download) to run from a copy of the source (Option 2)
 - Optional, for the modules that use them:
   - an **embedding model** in Lemonade (for example `Qwen3-Embedding-0.6B-GGUF`) for Memory and Knowledge bases
   - a web search service: your own [SearXNG](https://docs.searxng.org/), or an API key for Jina, Tavily or Firecrawl
   - **Node.js**, for MCP servers that start with `npx`
 
-## Run it
+## Get it running
 
-### Linux and macOS: one command
+### Option 1: install it as a command (easiest)
+
+[uv](https://docs.astral.sh/uv/) or [pipx](https://pipx.pypa.io/) puts the app in its own private environment, so it cannot clash with anything else on the computer. uv also fetches Python 3.12 or newer if you don't have it.
 
 ```bash
-cd LemonRind_Python
-bash lemonrind.sh          # creates its own environment on the first run, then starts the web app
+uv tool install git+https://github.com/PCAssistSoftware/LemonRind_Python
+lemonrind-web                    # or: lemonrind  for the terminal chat
 ```
 
-Then open **http://127.0.0.1:8080**. `bash lemonrind.sh chat` starts the terminal chat instead, and anything else on the line (for example `--port 8090 --no-browser`) goes to the web app.
-Starting it with `bash` needs no set-up. If you prefer to type `./lemonrind.sh`, run `chmod +x lemonrind.sh` once first (a file copied from Windows loses its executable permission).
+Or with pipx (the same result, but it needs Python 3.12 or newer to be installed already):
 
-### Windows (PowerShell)
+```bash
+pipx install git+https://github.com/PCAssistSoftware/LemonRind_Python
+lemonrind-web                    # or: lemonrind  for the terminal chat
+```
+
+If the command is not found afterwards, run `uv tool update-shell` (or `pipx ensurepath`) and open a new terminal.
+
+Behind an antivirus program that scans secure connections, add `--system-certs` to the uv command.
+
+#### Update it
+
+```bash
+uv tool upgrade lemonrind        # if you installed with uv
+pipx upgrade lemonrind           # if you installed with pipx
+```
+
+#### Remove it
+
+```bash
+uv tool uninstall lemonrind      # if you installed with uv
+pipx uninstall lemonrind         # if you installed with pipx
+```
+
+Your chats and settings are kept in the data folder (see below), so neither of these touches them.
+
+### Option 2: run it from a copy of the source
+
+```bash
+git clone https://github.com/PCAssistSoftware/LemonRind_Python.git
+cd LemonRind_Python
+```
+
+No git? Use the green **Code** button on GitHub, choose **Download ZIP**, unzip it, and open a terminal in that folder.
+
+#### Linux and macOS
+
+```bash
+bash lemonrind.sh      # creates its own environment on the first run, then starts the web app
+```
+
+`bash lemonrind.sh chat` starts the terminal chat instead, and anything else on the line (for example `--port 8090 --no-browser`) goes to the web app.
+
+#### Windows (PowerShell)
 
 ```powershell
-cd LemonRind_Python
 py -3 -m venv .venv                  # a private environment for this project
 .venv\Scripts\Activate.ps1
 pip install -e .
 lemonrind-web                        # opens your browser; or: lemonrind  for the terminal chat
 ```
 
-After the first time, running `.venv\Scripts\lemonrind-web.exe` is all it takes. Press Ctrl+C to stop it.
+### Open it
+
+However you started it, the web app opens in your browser at **http://127.0.0.1:8080**. Press Ctrl+C in the terminal to stop it.
+
+### Connect it to Lemonade
 
 Point it at your Lemonade Server in **Settings > Lemonade**, or on the command line:
 
@@ -55,22 +102,9 @@ Point it at your Lemonade Server in **Settings > Lemonade**, or on the command l
 lemonrind-web --base-url http://my-server:13305/v1/
 ```
 
-The default is `http://localhost:13305/v1/`. 
+The default is `http://localhost:13305/v1/`.
 
-### Install it as a command (any system)
-
-If you would rather have a `lemonrind-web` command that works from any folder, with no project folder to keep, install it with [uv](https://docs.astral.sh/uv/) or [pipx](https://pipx.pypa.io/). Each puts the app in its own private environment, so it cannot clash with anything else on the computer:
-
-```bash
-uv tool install git+https://github.com/PCAssistSoftware/LemonRind_Python
-lemonrind-web                    # or: lemonrind  for the terminal chat
-```
-
-`pipx install git+https://github.com/PCAssistSoftware/LemonRind_Python` does the same. uv has one advantage: if Python 3.12 or newer is not installed, it fetches one for you. If the command is not found afterwards, run `uv tool update-shell` (or `pipx ensurepath`) and open a new terminal. Behind an antivirus program that scans secure connections, add `--system-certs` to the uv command.
-
-To update: `uv tool upgrade lemonrind` (or `pipx upgrade lemonrind`). To remove it: `uv tool uninstall lemonrind` (or `pipx uninstall lemonrind`). Your chats and settings are kept in the data folder (see below), so neither touches them.
-
-### Using it from another computer or a phone
+## Using it from another computer or a phone
 
 By default the web app listens on this computer only. To share it, set a password first, then listen on the network:
 
@@ -165,8 +199,7 @@ Every screen, including all fourteen Settings sections, the phone layout and the
 Almost everything is in the **Settings** dialog (the gear in the header), laid out in sections: Lemonade, Assistant, Persona, Interface, Storage, Web search, File system access, Image generation,
 Memory, Auto-backup, Modules, Knowledge bases, MCP servers and Scheduler. They are saved in `settings.json` in the data folder, which you can also edit by hand.
 
-The data folder is `data/` in the project folder when you run from a checkout. An installed copy (see above) has no project folder, so it uses a fixed place for your user instead: `%LOCALAPPDATA%\LemonRind` on Windows, `~/Library/Application Support/LemonRind` on macOS and `~/.local/share/lemonrind` on Linux. To use another place, pass `--data-dir`, set `LEMONRIND_DATA_DIR`, or choose it in Settings > Storage. The app's own log is
-`data/logs/lemonrind.log`.
+The data folder is `data/` in the project folder when you run from a checkout. An installed copy (Option 1) has no project folder, so it uses a fixed place for your user instead: `%LOCALAPPDATA%\LemonRind` on Windows, `~/Library/Application Support/LemonRind` on macOS and `~/.local/share/lemonrind` on Linux. To use another place, pass `--data-dir`, set `LEMONRIND_DATA_DIR`, or choose it in Settings > Storage. The app's own log is `logs/lemonrind.log` inside the data folder.
 
 | Option | For | Meaning |
 |---|---|---|
@@ -185,7 +218,7 @@ of libraries is in `pyproject.toml`.
 
 ## Status and known limits
 
-- The test suite has about 800 tests (they need no server) and covers 94% of the code; the code is formatted and linted with `ruff`, type-checked with `mypy` (tests included), scanned with `bandit` and its libraries checked with `pip-audit`: `scripts/audit.ps1` runs every check in one go
+- The code has an automated test suite (it needs no server) and is checked with `ruff`, `mypy`, `bandit` and `pip-audit`; `scripts/audit.ps1` runs every check in one go on Windows
 - All four search services (SearXNG, Jina, Tavily and Firecrawl) have been tried against the real services
 - The launcher script `lemonrind.sh` has been run on Linux and under Git Bash on Windows; macOS is not yet tested
 - The database is the Python edition's own design: its data folder is not interchangeable with the .NET editions'
