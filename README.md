@@ -145,6 +145,8 @@ Markdown** with the thinking, tool use and pictures kept.
 | ![A drawn picture in a chat, with Save and Copy buttons](screenshots/drawing.png) | ![The scheduled job form with Daily, Weekly and Monthly pickers](screenshots/job-form.png) |
 | Drawing from an image model | A scheduled job, with a schedule picker and the next run times |
 
+Every screen, including all fourteen Settings sections, the phone layout and the login page, is in the [gallery](screenshots/README.md).
+
 ## Settings and your data
 
 Almost everything is in the **Settings** dialog (the gear in the header), laid out in sections: Lemonade, Assistant, Persona, Interface, Storage, Web search, File system access, Image generation,
