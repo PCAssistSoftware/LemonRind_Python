@@ -2,7 +2,7 @@
 
 What changed in each version of the Python edition, newest first. Each entry is dated, and a change is added here when it is pushed.
 
-## 0.1.0 - 2026-10-06
+## 0.1.0 - 06-10-2026
 
 The first version of the Python edition.
 
