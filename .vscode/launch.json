@@ -1,0 +1,51 @@
+{
+    // Press F5 (or the green arrow in "Run and Debug") and pick one. Set a breakpoint by clicking left of a line number.
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Lemon Rind: web app (your real data)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "lemonrind.webui",
+            "args": [],
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
+        {
+            "name": "Lemon Rind: web app (scratch data, no browser)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "lemonrind.webui",
+            // data_dev/ is a separate data folder, so testing a change cannot touch your real chats, memories or settings.
+            // The first time, open Settings > Lemonade and enter your Lemonade address: it is saved in data_dev, not in your real data.
+            "args": ["--no-browser", "--port", "8090", "--data-dir", "${workspaceFolder}/data_dev"],
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
+        {
+            "name": "Lemon Rind: terminal chat",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "lemonrind",
+            "args": [],
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
+        {
+            "name": "pytest: the tests in the open file",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "pytest",
+            "args": ["${file}", "-x", "-q"],
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "Python: the open file",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal"
+        }
+    ]
+}

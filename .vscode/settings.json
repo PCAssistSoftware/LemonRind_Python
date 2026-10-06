@@ -1,0 +1,46 @@
+{
+    // Which Python to use. VS Code finds ".venv" by itself; if you ever see "Select Interpreter" in the bottom-right,
+    // pick .venv\Scripts\python.exe (Windows) or .venv-linux/bin/python (Linux).
+    "python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe",
+
+    // Tests: pytest, reading its settings from pyproject.toml (so the Testing panel finds the same 800+ tests as the terminal).
+    "python.testing.pytestEnabled": true,
+    "python.testing.unittestEnabled": false,
+    "python.testing.pytestArgs": ["tests"],
+
+    // Format with Ruff when you save (the same formatter the project uses, so saving never fights "ruff format .").
+    "[python]": {
+        "editor.defaultFormatter": "charliermarsh.ruff",
+        "editor.formatOnSave": true,
+        "editor.codeActionsOnSave": {
+            "source.organizeImports.ruff": "explicit"
+        },
+        "editor.rulers": [100]
+    },
+
+    // Type checking with mypy, using the settings in pyproject.toml ([tool.mypy]).
+    "mypy-type-checker.importStrategy": "fromEnvironment",
+    "mypy-type-checker.args": ["--config-file=pyproject.toml"],
+    "mypy-type-checker.reportingScope": "workspace",
+    "ruff.importStrategy": "fromEnvironment",
+
+    // lemonrind.sh must keep Unix line endings (Linux cannot run a script saved with Windows ones).
+    "[shellscript]": {
+        "files.eol": "\n"
+    },
+
+    // Keep the file list and search free of generated folders.
+    "files.exclude": {
+        "**/__pycache__": true,
+        "**/.mypy_cache": true,
+        "**/.ruff_cache": true,
+        "**/.pytest_cache": true
+    },
+    "search.exclude": {
+        "**/.venv*": true,
+        "uv.lock": true,
+        "data": true,
+        "data_backups": true,
+        "data_dev": true
+    }
+}

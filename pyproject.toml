@@ -1,0 +1,102 @@
+# Project definition. This one file replaces what a .csproj plus NuGet settings do in .NET:
+# the package name, the Python version it needs, its dependencies, and the settings of the
+# developer tools (pytest, ruff).
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "lemonrind"
+version = "0.1.0"
+description = "Lemon Rind - a local AI agent for Lemonade Server (Python edition)"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.12"
+dependencies = [
+    "openai>=1.50",   # talks to Lemonade's OpenAI-compatible API
+    "nicegui>=3.0",  # the web UI: build pages in Python, served to the browser
+    "httpx2>=2.13",   # HTTP client for Lemonade's own endpoints (the OpenAI SDK is built on it too)
+    "pydantic>=2.7",  # typed data models and settings
+    "rich>=13",       # colourful, readable terminal output
+
+    "apscheduler>=3.10,<4",  # decides when scheduled jobs fire (4.x is a different, still unfinished API)
+    "mcp>=2",         # the Model Context Protocol client: use tools provided by other programs
+    "regex>=2024",    # like re, plus match timeouts (protects the code search from runaway patterns)
+    "numpy>=2",       # fast vector maths for similarity search (memory, knowledge bases)
+    "pypdf>=4",       # reads PDF files (knowledge bases, attachments)
+    "python-docx>=1",  # reads Word files (knowledge bases, attachments)
+    "openpyxl>=3.1",  # reads Excel files (knowledge bases, attachments)
+    "Pillow>=10",     # shrinks and re-encodes an attached picture for a vision model
+    "aiohttp>=3.9",   # WebSocket client for Lemonade's live server log
+    "tzlocal>=5",     # the computer's own time zone, for cron schedules
+    "starlette>=0.37",  # the web framework NiceGUI is built on: the login middleware uses it directly
+    "tree-sitter>=0.23",  # a parser library: checks that an edited C# or Visual Basic file still parses
+    "tree-sitter-c-sharp>=0.23",  # its C# grammar
+    "tree-sitter-vb-dotnet>=0.3",  # its Visual Basic grammar
+    "tzdata; sys_platform == 'win32'",  # time zone names for zoneinfo (Windows has no built-in copy)
+]
+
+[project.optional-dependencies]
+# Tools used while developing, not needed to run the app: install with  pip install -e ".[dev]"
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.6",
+    "mypy>=1.10",      # static type checking:  mypy src tests
+    "pytest-cov>=5",   # test coverage:  pytest --cov=lemonrind
+    "bandit[toml]>=1.7",  # security scan of our own code:  bandit -c pyproject.toml -r src
+    "pip-audit>=2.7",  # looks the installed libraries up in the public vulnerability databases
+    "truststore>=0.9",  # lets pip-audit use the operating system's certificates (needed behind some antivirus scanners)
+]
+
+[project.scripts]
+# Creates a `lemonrind` command that runs lemonrind.cli:main
+lemonrind = "lemonrind.cli:main"
+lemonrind-web = "lemonrind.webui.app:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/lemonrind"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+# NiceGUI's test plugin gives tests a simulated browser (the `user` fixture) with no real browser needed.
+addopts = "-p nicegui.testing.user_plugin"
+main_file = ""
+markers = ["live: needs a real Lemonade server (run with LEMONRIND_LIVE=1)"]
+# A connection or file thrown away without closing it is a leak: fail the run rather than print a warning that
+# gets lost in the summary. (Tests close their databases automatically, see tests/conftest.py.)
+filterwarnings = ["error::ResourceWarning", "error::pytest.PytestUnraisableExceptionWarning"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+# E/F: pycodestyle and pyflakes basics, I: import order, UP: modern syntax, B: likely bugs, SIM: simplifications,
+# C4: tidier comprehensions, PTH: use pathlib rather than os.path
+select = ["E", "F", "I", "UP", "B", "SIM", "C4", "PTH"]
+# The formatter keeps code within the line length; long comment and docstring lines are left to the author.
+ignore = [
+    "E501",
+    "SIM117",  # nested `with` blocks are how NiceGUI layouts are written; merging them hides the nesting
+]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+# Three checks are switched off because they produce only noise here. First, NiceGUI's @ui.refreshable methods (the
+# checker does not understand that `self` is supplied for you). Second, the OpenAI SDK's very large overloaded
+# `create(...)` signatures. Third, a note that mypy skips the inside of functions with no type hints at all (many
+# tests are written that way).
+disable_error_code = ["call-arg", "call-overload", "annotation-unchecked"]
+
+[tool.bandit]
+# Bandit is a security scanner for Python code. Run it with:  bandit -c pyproject.toml -r src
+# Tests are left out: they use `assert` freely and write to temporary folders on purpose.
+exclude_dirs = ["tests"]
+# B101 (assert) is skipped because asserts here only tell the type checker what is already true. Code that must
+# refuse something at run time raises an explicit error instead, because asserts vanish under `python -O`.
+skips = ["B101"]

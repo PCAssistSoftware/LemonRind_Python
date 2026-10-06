@@ -1,0 +1,62 @@
+{
+    // Terminal > Run Task... (or Ctrl+Shift+B for the default one, "Check everything").
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Format (ruff)",
+            "type": "process",
+            "command": "${command:python.interpreterPath}",
+            "args": ["-m", "ruff", "format", "."],
+            "problemMatcher": []
+        },
+        {
+            "label": "Lint (ruff)",
+            "type": "process",
+            "command": "${command:python.interpreterPath}",
+            "args": ["-m", "ruff", "check", "."],
+            "problemMatcher": []
+        },
+        {
+            "label": "Type check (mypy)",
+            "type": "process",
+            "command": "${command:python.interpreterPath}",
+            "args": ["-m", "mypy", "src", "tests"],
+            "problemMatcher": []
+        },
+        {
+            "label": "Tests (pytest)",
+            "type": "process",
+            "command": "${command:python.interpreterPath}",
+            "args": ["-m", "pytest", "-q"],
+            "problemMatcher": []
+        },
+        {
+            "label": "Security scan (bandit)",
+            "type": "process",
+            "command": "${command:python.interpreterPath}",
+            "args": ["-m", "bandit", "-q", "-c", "pyproject.toml", "-r", "src"],
+            "problemMatcher": []
+        },
+        {
+            "label": "Library vulnerabilities (pip-audit)",
+            "type": "process",
+            "command": "${command:python.interpreterPath}",
+            "args": ["scripts/audit_dependencies.py"],
+            "problemMatcher": []
+        },
+        {
+            "label": "Full audit (zip of results)",
+            "type": "process",
+            "command": "powershell.exe",
+            "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "scripts/audit.ps1"],
+            "problemMatcher": []
+        },
+        {
+            "label": "Check everything",
+            "dependsOrder": "sequence",
+            "dependsOn": ["Format (ruff)", "Lint (ruff)", "Type check (mypy)", "Tests (pytest)"],
+            "group": { "kind": "build", "isDefault": true },
+            "problemMatcher": []
+        }
+    ]
+}

@@ -1,0 +1,30 @@
+# Virtual environment and caches (recreated with: py -3.14 -m venv .venv)
+.venv*/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+
+# Live data: database, settings (may hold API keys), generated files. Never commit.
+data/
+
+# Auto-backup zips: each one is a full copy of data/ (so it holds the same keys and chats). Never commit.
+data_backups/
+
+# Local tool and test output
+.mypy_cache/
+.coverage
+.nicegui/
+
+# Editor settings (PyCharm keeps its run configurations here)
+.idea/
+
+# A separate data folder for trying changes without touching your real one (the "scratch data" debug configuration)
+data_dev/
+
+# Output of audit runs (ruff, mypy, bandit, coverage...)
+audit-results/
+audit-results.zip

@@ -1,0 +1,6 @@
+# Keep line endings right whichever system a file is edited on. A shell script saved with Windows line endings
+# cannot run on Linux, so scripts always use Unix ones.
+* text=auto
+*.sh text eol=lf
+*.png binary
+*.kb binary
