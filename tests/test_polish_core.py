@@ -563,3 +563,40 @@ def test_a_harmless_windows_connection_reset_is_not_logged_but_real_errors_are(t
             if handler not in before:
                 root.removeHandler(handler)
                 handler.close()
+
+
+def test_a_busy_port_is_noticed_and_a_free_one_is_not():
+    import socket
+
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        listener.listen()
+        busy = listener.getsockname()[1]
+        assert web_app.port_in_use("127.0.0.1", busy)
+        assert web_app.port_in_use(
+            "0.0.0.0", busy
+        )  # a wildcard address is checked through this computer
+    assert not web_app.port_in_use("127.0.0.1", busy)  # released again: free
+
+
+def test_starting_on_a_busy_port_says_what_to_do_and_starts_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+):
+    import socket
+
+    started: dict = {}
+    monkeypatch.setattr(web_app.ui, "run", lambda **kwargs: started.update(kwargs))
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        listener.listen()
+        busy = listener.getsockname()[1]
+
+        with pytest.raises(SystemExit) as stopped:
+            web_app.main(
+                ["--port", str(busy), "--no-browser", "--data-dir", str(tmp_path / "data")]
+            )
+
+    message = str(stopped.value)
+    assert f"Port {busy} is already in use" in message and f"--port {busy + 10}" in message
+    assert started == {}  # the server was never started
+    assert not (tmp_path / "data").exists()  # and nothing was created before the check

@@ -94,6 +94,14 @@ lemonrind-web                        # opens your browser; or: lemonrind  for th
 
 However you started it, the web app opens in your browser at **http://127.0.0.1:8080**. Press Ctrl+C in the terminal to stop it.
 
+**Is port 8080 already used by another program?** Start it on a different port with `--port`, and open that one instead:
+
+```bash
+lemonrind-web --port 8090          # from a source copy: bash lemonrind.sh --port 8090
+```
+
+If you forget, it stops straight away with a message that the port is in use and suggests another.
+
 ### Connect it to Lemonade
 
 Point it at your Lemonade Server in **Settings > Lemonade**, or on the command line:
@@ -104,16 +112,45 @@ lemonrind-web --base-url http://my-server:13305/v1/
 
 The default is `http://localhost:13305/v1/`.
 
-## Using it from another computer or a phone
+## Using it from another device on your network
 
-By default the web app listens on this computer only. To share it, set a password first, then listen on the network:
+By default the web app listens on this computer only, so no other device can reach it. To use it from a phone, a tablet or another computer on your network:
+
+**1. Set a password first.** Without one, anything that can reach the address could read your chats and make the assistant run its tools.
 
 ```bash
-export LEMONRIND_PASSWORD='something long'      # PowerShell: $env:LEMONRIND_PASSWORD = "something long"
+export LEMONRIND_PASSWORD='something long'          # Linux and macOS
+```
+
+```powershell
+$env:LEMONRIND_PASSWORD = "something long"          # Windows PowerShell
+```
+
+**2. Start it listening on the network.** Add `--port 8090` if 8080 is taken, and `--no-browser` on a computer with no screen:
+
+```bash
 lemonrind-web --host 0.0.0.0
 ```
 
-Every page then asks for the password once. It travels over plain HTTP, so use it on a network you trust. Without a password, listening on the network prints a warning.
+**3. Open it from the other device** using this computer's name or IP address and the port, for example `http://ubuntu:8080` or `http://192.168.1.20:8080`. An IP address is the safer choice for a phone, which often cannot look up computer names. To find this computer's address: `hostname -I` on Linux, `ipconfig` on Windows.
+
+**4. If it still cannot be reached, check the firewall** on the computer running Lemon Rind. On Ubuntu: `sudo ufw allow 8080/tcp` (use your own port). On Windows, allow the app when the firewall asks the first time you start it.
+
+Every page then asks for the password once. It travels over plain HTTP, so use it on a network you trust, and never make the port reachable from the internet. Without a password, listening on the network prints a warning.
+
+## Command-line options
+
+These work with `lemonrind-web` (the web app) and `lemonrind` (the terminal chat). From a source copy on Linux or macOS, put them after `bash lemonrind.sh`.
+
+| Option | For | Meaning |
+|---|---|---|
+| `--port PORT` | web | the port to listen on (default `8080`; choose another if something else uses it) |
+| `--host ADDRESS` | web | the address to listen on (default `127.0.0.1`, this computer only; `0.0.0.0` shares it on your network) |
+| `--password` | web | require a password (better: the `LEMONRIND_PASSWORD` environment variable) |
+| `--no-browser` | web | do not open a browser tab on start-up |
+| `--base-url URL` | both | the Lemonade API address |
+| `--data-dir DIR` | both | where the data folder is |
+| `--model`, `--new`, `--verbose` | terminal | the model, a fresh chat, debug logging |
 
 ## Features
 
@@ -199,16 +236,7 @@ Every screen, including all fourteen Settings sections, the phone layout and the
 Almost everything is in the **Settings** dialog (the gear in the header), laid out in sections: Lemonade, Assistant, Persona, Interface, Storage, Web search, File system access, Image generation,
 Memory, Auto-backup, Modules, Knowledge bases, MCP servers and Scheduler. They are saved in `settings.json` in the data folder, which you can also edit by hand.
 
-The data folder is `data/` in the project folder when you run from a checkout. An installed copy (Option 1) has no project folder, so it uses a fixed place for your user instead: `%LOCALAPPDATA%\LemonRind` on Windows, `~/Library/Application Support/LemonRind` on macOS and `~/.local/share/lemonrind` on Linux. To use another place, pass `--data-dir`, set `LEMONRIND_DATA_DIR`, or choose it in Settings > Storage. The app's own log is `logs/lemonrind.log` inside the data folder.
-
-| Option | For | Meaning |
-|---|---|---|
-| `--base-url URL` | both | the Lemonade API address |
-| `--data-dir DIR` | both | where the data folder is |
-| `--host`, `--port` | web | the address and port to listen on (default `127.0.0.1:8080`) |
-| `--password` | web | require a password (better: the `LEMONRIND_PASSWORD` environment variable) |
-| `--no-browser` | web | do not open a browser tab on start-up |
-| `--model`, `--new`, `--verbose` | terminal | the model, a fresh chat, debug logging |
+The data folder is `data/` in the project folder when you run from a checkout. An installed copy (Option 1) has no project folder, so it uses a fixed place for your user instead: `%LOCALAPPDATA%\LemonRind` on Windows, `~/Library/Application Support/LemonRind` on macOS and `~/.local/share/lemonrind` on Linux. To use another place, pass `--data-dir`, set `LEMONRIND_DATA_DIR`, or choose it in Settings > Storage. The app's own log is `logs/lemonrind.log` inside the data folder. The other start-up options are listed under Command-line options above.
 
 ## What it is built with
 

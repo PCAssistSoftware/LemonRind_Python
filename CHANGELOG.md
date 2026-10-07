@@ -2,6 +2,12 @@
 
 What changed in each version of the Python edition, newest first. Each entry is dated, and a change is added here when it is pushed.
 
+## 0.2.2 - 07-10-2026
+
+### Changed
+
+- **A busy port is now explained.** Starting the web app on a port that another program is using used to print a long system error after a start-up line that looked like success. It now stops at once with a short message that the port is in use and suggests another, for example `lemonrind-web --port 8090`.
+
 ## 0.2.1 - 06-10-2026
 
 ### Fixed

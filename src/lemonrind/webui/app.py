@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import os
 import shutil
+import socket
 
 # Security scanners flag any use of subprocess; here it only starts the browser (see open_browser).
 import subprocess  # nosec B404
@@ -109,8 +110,30 @@ def open_browser(url: str) -> None:
     webbrowser.open(url)
 
 
+def port_in_use(host: str, port: int) -> bool:
+    """Is something already listening on ``port``?
+
+    It asks by *connecting*, not by trying to claim the port: a connection that succeeds means a program answers there.
+    That has no side effects and, unlike a trial bind, is not fooled by a port that was only just released. A wildcard
+    address ("listen on every interface") is checked through this computer's own address.
+    """
+    # Only a lookup table: nothing is bound to the wildcard address here (hence the scanner exemption).
+    probe = {"": "127.0.0.1", "0.0.0.0": "127.0.0.1", "::": "::1"}.get(host, host)  # nosec B104
+    try:
+        with socket.create_connection((probe, port), timeout=0.5):
+            return True
+    except OSError:
+        return False
+
+
 def main(argv: Sequence[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
+
+    if port_in_use(args.host, args.port):
+        sys.exit(
+            f"Port {args.port} is already in use: another program (or another copy of Lemon Rind) is listening on it.\n"
+            f"Start it on a different port, for example:  lemonrind-web --port {args.port + 10}"
+        )
 
     data_dir = resolve_data_dir(args.data_dir)
     configure_logging(data_dir, to_screen=True)
