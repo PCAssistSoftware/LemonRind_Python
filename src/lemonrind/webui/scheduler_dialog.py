@@ -64,8 +64,15 @@ def build_scheduler(
     module: SchedulerModule,
     chat_models: list[str],
     open_chat: Callable[[str], None],
+    *,
+    time_limit_minutes: float | None = None,
+    on_time_limit: Callable[[float], None] | None = None,
 ) -> None:
-    """Draw the section into the current container. ``open_chat(session_id)`` jumps to a run's chat."""
+    """Draw the section into the current container. ``open_chat(session_id)`` jumps to a run's chat.
+
+    ``time_limit_minutes`` and ``on_time_limit`` add a box for how long one run may take: the box shows the current
+    limit, and ``on_time_limit`` is called with the new number of minutes whenever it is changed to a valid value.
+    """
     seen_runs = module.runs_finished
 
     @ui.refreshable
@@ -169,8 +176,41 @@ def build_scheduler(
         ui.button("New job", icon="add", on_click=lambda: edit(None)).props("color=primary").mark(
             "job-new"
         )
+        if time_limit_minutes is not None and on_time_limit is not None:
+            _time_limit_box(time_limit_minutes, on_time_limit)
 
     ui.timer(1.5, poll)
+
+
+TIME_LIMIT_MIN_MINUTES = 1
+TIME_LIMIT_MAX_MINUTES = (
+    24 * 60
+)  # a day: more than that is far more likely a typing slip than a plan
+
+
+def _time_limit_box(minutes: float, on_change: Callable[[float], None]) -> None:
+    """The "how long may one run take" box. A value outside the allowed range is ignored (the box shows a warning)."""
+
+    def changed(event) -> None:
+        value = event.value
+        if value is None or not (TIME_LIMIT_MIN_MINUTES <= value <= TIME_LIMIT_MAX_MINUTES):
+            return  # still typing, or out of range: the box's own hint explains the range
+        on_change(float(value))
+
+    ui.separator().classes("q-mt-sm")
+    ui.number(
+        "Time limit for one run (minutes)",
+        value=round(minutes),
+        min=TIME_LIMIT_MIN_MINUTES,
+        max=TIME_LIMIT_MAX_MINUTES,
+        step=10,
+        format="%d",
+        on_change=changed,
+    ).props("outlined dense").classes("w-64").mark("job-time-limit")
+    ui.label(
+        "A run that takes longer than this is stopped. It applies from the next run and is saved at once. "
+        f"Allowed: {TIME_LIMIT_MIN_MINUTES} to {TIME_LIMIT_MAX_MINUTES} minutes (a day). The default is 30."
+    ).classes("text-caption lr-muted")
 
 
 async def edit_job(

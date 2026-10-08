@@ -2,6 +2,12 @@
 
 What changed in each version of the Python edition, newest first. Each entry is dated, and a change is added here when it is pushed.
 
+## 0.2.3 - 08-10-2026
+
+### Added
+
+- **The time limit for a scheduled run can be changed in Settings > Scheduler.** It was fixed at 30 minutes. The new box ("Time limit for one run", in minutes, from 1 up to a day) takes effect from the next run and is saved at once.
+
 ## 0.2.2 - 07-10-2026
 
 ### Changed

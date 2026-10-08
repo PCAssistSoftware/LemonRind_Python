@@ -14,7 +14,7 @@ from lemonrind.storage import Database
 from lemonrind.terminal.chatloop import ChatLoop
 from lemonrind.webui.context import set_context
 from lemonrind.webui.page import register_pages
-from tests.conftest import open_section
+from tests.conftest import elements, open_section
 from tests.test_chatloop import ScriptedConsole
 from tests.test_scheduler import FakeLemonade, reply
 from tests.test_webui import make_context
@@ -260,5 +260,35 @@ async def test_opening_a_running_jobs_chat_explains_that_it_is_still_working(
         await user.should_see("Start a conversation")
         user.find(marker="chat-item").click()
         await user.should_see("This scheduled job is still running")
+    finally:
+        set_context(None)
+
+
+async def test_the_time_limit_for_a_run_is_shown_changed_and_saved_at_once(
+    user: User, tmp_path: Path
+):
+    context = make_context(tmp_path, FakeLemonade())
+    set_context(context)
+    register_pages()
+    try:
+        await user.open("/")
+        await open_section(user, "scheduler")
+
+        (box,) = elements(user, "job-time-limit")
+        assert box.value == 30  # the default: 1,800 seconds
+
+        box.value = 120  # two hours
+        for _ in range(40):
+            if context.settings.modules.scheduler.job_timeout_seconds == 7200:
+                break
+            await asyncio.sleep(0.05)
+
+        assert context.settings.modules.scheduler.job_timeout_seconds == 7200
+        assert '"job_timeout_seconds": 7200.0' in context.settings_file.read_text(encoding="utf-8")
+
+        box.value = 0  # outside the allowed range: ignored
+        box.value = 99999
+        await asyncio.sleep(0.2)
+        assert context.settings.modules.scheduler.job_timeout_seconds == 7200
     finally:
         set_context(None)

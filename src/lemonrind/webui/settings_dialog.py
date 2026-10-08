@@ -123,6 +123,11 @@ async def open_settings(
         chat_to_open = session_id
         dialog.submit(False)
 
+    def set_job_time_limit(minutes: float) -> None:
+        """A changed time limit for scheduled runs takes effect at once and is saved (this section has no Save)."""
+        settings.modules.scheduler.job_timeout_seconds = minutes * 60
+        context.save_settings()
+
     def live_screen(key: str, kind: type[Module], build: Callable[[Module], None]) -> None:
         """A module's own screen, or a note when the module is switched off."""
         target = _module(context, key)
@@ -240,7 +245,14 @@ async def open_settings(
                                     live_screen(
                                         "scheduler",
                                         SchedulerModule,
-                                        lambda m: build_scheduler(m, models.chat, open_chat),  # type: ignore[arg-type]
+                                        lambda m: build_scheduler(
+                                            m,  # type: ignore[arg-type]
+                                            models.chat,
+                                            open_chat,
+                                            time_limit_minutes=settings.modules.scheduler.job_timeout_seconds
+                                            / 60,
+                                            on_time_limit=set_job_time_limit,
+                                        ),
                                     )
 
         ui.separator()
