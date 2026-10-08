@@ -72,10 +72,8 @@ body.body--dark {
 .lr-thinking-text { white-space: pre-wrap; color: var(--lr-muted); font-size: 0.85em; }
 .lr-muted { color: var(--lr-muted); }
 .lr-mark { background: rgba(255, 193, 7, 0.35); color: inherit; border-radius: 2px; padding: 0 1px; }
-/* A row of dialog buttons that stays at the bottom edge of a scrolling card. The background is inherited from
-   the card so the form does not show through; the top border marks where the scrolling content ends. */
-.lr-sticky-footer { position: sticky; bottom: 0; background: inherit; padding-top: 8px; z-index: 1;
-                    border-top: 1px solid rgba(127, 127, 127, 0.3); }
+/* The direct children of a dialog form's scrolling body keep their natural height (see edit_job). */
+.lr-form-body > * { flex-shrink: 0; }
 .lr-one-line { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lr-snippet { font-size: 0.75rem; color: var(--lr-muted); line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 

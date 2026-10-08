@@ -2,6 +2,12 @@
 
 What changed in each version of the Python edition, newest first. Each entry is dated, and a change is added here when it is pushed.
 
+## 0.2.4 - 08-10-2026
+
+### Fixed
+
+- **The job form no longer lets a long prompt run behind its buttons.** With a very long prompt, the text showed through underneath the Cancel and Save buttons, and part of it appeared below them. The form now has a fixed title, a scrolling middle and buttons that stay clear of the text, like the other windows.
+
 ## 0.2.3 - 08-10-2026
 
 ### Added

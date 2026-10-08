@@ -231,109 +231,123 @@ async def edit_job(
 
     with (
         ui.dialog() as dialog,
-        ui.card().classes("w-[40rem] max-w-full max-h-[90vh] overflow-auto"),
+        ui.card().classes("w-[40rem] max-w-full max-h-[90vh] no-wrap gap-0 q-pa-none"),
     ):
-        ui.label("Edit job" if job else "New job").classes("text-h6")
-        name = (
-            ui.input("Name", value=job.name if job else "")
-            .props("outlined dense")
-            .classes("w-full")
-        )
-        name.mark("job-name")
-        start = job.cron if job else DEFAULT_SCHEDULE
-        simple = read_simple(start) or SimpleSchedule("daily", 9, 0)
-        with ui.row().classes("w-full items-center gap-2 no-wrap"):
-            frequency = ui.select(
-                FREQUENCY_CHOICES,
-                value=simple.frequency if read_simple(start) else "custom",
-                label="Repeat",
-            ).props("outlined dense")
-            frequency.classes("w-32").mark("job-frequency")
-            weekday = ui.select(WEEKDAY_CHOICES, value=simple.weekday, label="Day").props(
-                "outlined dense"
+        ui.label("Edit job" if job else "New job").classes("text-h6 q-px-md q-pt-md q-pb-sm")
+        # The form scrolls inside its own box; the title above and the buttons below stay put. (Direct children may not
+        # shrink, or a tall multi-line box would be squeezed and its text would spill over the buttons.)
+        with (
+            ui.column()
+            .classes("w-full grow overflow-auto q-px-md q-pb-md gap-2 lr-form-body")
+            .style("min-height: 0")
+        ):
+            name = (
+                ui.input("Name", value=job.name if job else "")
+                .props("outlined dense")
+                .classes("w-full")
             )
-            weekday.classes("w-36").mark("job-weekday")
-            day = ui.select(DAY_CHOICES, value=simple.day, label="Day of month").props(
-                "outlined dense"
-            )
-            day.classes("w-32").mark("job-day")
-            hour = ui.select(HOUR_CHOICES, value=simple.hour, label="Hour").props("outlined dense")
-            hour.classes("w-24").mark("job-hour")
-            minute = ui.select(MINUTE_CHOICES, value=simple.minute, label="Minute").props(
-                "outlined dense"
-            )
-            minute.classes("w-24").mark("job-minute")
-        schedule = (
-            ui.input("Schedule (cron)", value=start).props("outlined dense").classes("w-full")
-        )
-        schedule.mark("job-schedule")
-        syncing = False  # True while the pickers and the text are being set from each other
-
-        def show_pickers() -> None:
-            """Which pickers make sense for the chosen frequency (none at all for Custom)."""
-            custom = frequency.value == "custom"
-            weekday.set_visibility(frequency.value == "weekly")
-            day.set_visibility(frequency.value == "monthly")
-            hour.set_visibility(not custom)
-            minute.set_visibility(not custom)
-
-        def pickers_changed() -> None:
-            """A picker moved: write the matching expression into the text box (Custom leaves the text alone)."""
-            nonlocal syncing
-            show_pickers()
-            if frequency.value == "custom":
-                return
-            syncing = True
-            schedule.value = simple_expression(
-                SimpleSchedule(frequency.value, hour.value, minute.value, weekday.value, day.value)
-            )
-            syncing = False
-
-        def text_changed() -> None:
-            """The text was typed: show it in the pickers if they can express it, otherwise switch to Custom."""
-            nonlocal syncing
-            preview()
-            if syncing:
-                return
-            syncing = True
-            if (found := read_simple((schedule.value or "").strip())) is not None:
-                frequency.value, hour.value, minute.value = (
-                    found.frequency,
-                    found.hour,
-                    found.minute,
+            name.mark("job-name")
+            start = job.cron if job else DEFAULT_SCHEDULE
+            simple = read_simple(start) or SimpleSchedule("daily", 9, 0)
+            with ui.row().classes("w-full items-center gap-2 no-wrap"):
+                frequency = ui.select(
+                    FREQUENCY_CHOICES,
+                    value=simple.frequency if read_simple(start) else "custom",
+                    label="Repeat",
+                ).props("outlined dense")
+                frequency.classes("w-32").mark("job-frequency")
+                weekday = ui.select(WEEKDAY_CHOICES, value=simple.weekday, label="Day").props(
+                    "outlined dense"
                 )
-                weekday.value, day.value = found.weekday, found.day
-            else:
-                frequency.value = "custom"
-            syncing = False
-            show_pickers()
+                weekday.classes("w-36").mark("job-weekday")
+                day = ui.select(DAY_CHOICES, value=simple.day, label="Day of month").props(
+                    "outlined dense"
+                )
+                day.classes("w-32").mark("job-day")
+                hour = ui.select(HOUR_CHOICES, value=simple.hour, label="Hour").props(
+                    "outlined dense"
+                )
+                hour.classes("w-24").mark("job-hour")
+                minute = ui.select(MINUTE_CHOICES, value=simple.minute, label="Minute").props(
+                    "outlined dense"
+                )
+                minute.classes("w-24").mark("job-minute")
+            schedule = (
+                ui.input("Schedule (cron)", value=start).props("outlined dense").classes("w-full")
+            )
+            schedule.mark("job-schedule")
+            syncing = False  # True while the pickers and the text are being set from each other
 
-        for picker in (frequency, weekday, day, hour, minute):
-            picker.on_value_change(lambda _: None if syncing else pickers_changed())
-        schedule.on_value_change(lambda _: text_changed())
-        show_pickers()
-        preview_label = ui.label().classes("text-caption")
-        ui.label(HELP_TEXT).classes("text-caption lr-muted")
-        prompt = (
-            ui.textarea("What should the assistant do each time?", value=job.prompt if job else "")
-            .props("outlined autogrow")
-            .classes("w-full")
-            .mark("job-prompt")
-        )
-        model = ui.select(
-            {"": "(whatever model is selected)", **{m: m for m in chat_models}},
-            value=job.model if job else "",
-            label="Model",
-        ).classes("w-full")
-        unattended = ui.switch(
-            "Allow tools that normally ask permission to run without asking",
-            value=job.allow_unattended_tools if job else False,
-        )
-        ui.label(
-            "Nobody is there to answer a permission question, so by default such tools (for example MCP servers "
-            "that send email) are refused in a scheduled run. Switch this on only for a job you trust."
-        ).classes("text-caption lr-muted")
-        with ui.row().classes("w-full justify-end q-mt-sm lr-sticky-footer"):
+            def show_pickers() -> None:
+                """Which pickers make sense for the chosen frequency (none at all for Custom)."""
+                custom = frequency.value == "custom"
+                weekday.set_visibility(frequency.value == "weekly")
+                day.set_visibility(frequency.value == "monthly")
+                hour.set_visibility(not custom)
+                minute.set_visibility(not custom)
+
+            def pickers_changed() -> None:
+                """A picker moved: write the matching expression into the text box (Custom leaves the text alone)."""
+                nonlocal syncing
+                show_pickers()
+                if frequency.value == "custom":
+                    return
+                syncing = True
+                schedule.value = simple_expression(
+                    SimpleSchedule(
+                        frequency.value, hour.value, minute.value, weekday.value, day.value
+                    )
+                )
+                syncing = False
+
+            def text_changed() -> None:
+                """The text was typed: show it in the pickers if they can express it, otherwise switch to Custom."""
+                nonlocal syncing
+                preview()
+                if syncing:
+                    return
+                syncing = True
+                if (found := read_simple((schedule.value or "").strip())) is not None:
+                    frequency.value, hour.value, minute.value = (
+                        found.frequency,
+                        found.hour,
+                        found.minute,
+                    )
+                    weekday.value, day.value = found.weekday, found.day
+                else:
+                    frequency.value = "custom"
+                syncing = False
+                show_pickers()
+
+            for picker in (frequency, weekday, day, hour, minute):
+                picker.on_value_change(lambda _: None if syncing else pickers_changed())
+            schedule.on_value_change(lambda _: text_changed())
+            show_pickers()
+            preview_label = ui.label().classes("text-caption")
+            ui.label(HELP_TEXT).classes("text-caption lr-muted")
+            prompt = (
+                ui.textarea(
+                    "What should the assistant do each time?", value=job.prompt if job else ""
+                )
+                .props("outlined autogrow")
+                .classes("w-full")
+                .mark("job-prompt")
+            )
+            model = ui.select(
+                {"": "(whatever model is selected)", **{m: m for m in chat_models}},
+                value=job.model if job else "",
+                label="Model",
+            ).classes("w-full")
+            unattended = ui.switch(
+                "Allow tools that normally ask permission to run without asking",
+                value=job.allow_unattended_tools if job else False,
+            )
+            ui.label(
+                "Nobody is there to answer a permission question, so by default such tools (for example MCP servers "
+                "that send email) are refused in a scheduled run. Switch this on only for a job you trust."
+            ).classes("text-caption lr-muted")
+        ui.separator()
+        with ui.row().classes("w-full justify-end q-pa-sm gap-2 shrink-0"):
             ui.button("Cancel", on_click=lambda: dialog.submit(False)).props("flat")
             ui.button("Save", on_click=lambda: dialog.submit(True)).props("color=primary").mark(
                 "job-save"

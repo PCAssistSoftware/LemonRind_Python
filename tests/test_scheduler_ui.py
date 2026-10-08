@@ -292,3 +292,26 @@ async def test_the_time_limit_for_a_run_is_shown_changed_and_saved_at_once(
         assert context.settings.modules.scheduler.job_timeout_seconds == 7200
     finally:
         set_context(None)
+
+
+async def test_the_job_forms_buttons_are_outside_the_part_that_scrolls(user: User, tmp_path: Path):
+    from tests.test_dialog_footer import ancestors
+
+    context = make_context(tmp_path, FakeLemonade())
+    set_context(context)
+    register_pages()
+    try:
+        await user.open("/")
+        await open_section(user, "scheduler")
+        user.find(marker="job-new").click()
+        await user.should_see(marker="job-save")
+
+        (save,) = elements(user, "job-save")
+        (prompt,) = elements(user, "job-prompt")
+
+        # a very long prompt must scroll inside the form's own box, never behind or below the buttons
+        assert [a for a in ancestors(save) if "overflow-auto" in a.classes] == []
+        scrolling = [a for a in ancestors(prompt) if "overflow-auto" in a.classes]
+        assert len(scrolling) == 1 and "lr-form-body" in scrolling[0].classes
+    finally:
+        set_context(None)
