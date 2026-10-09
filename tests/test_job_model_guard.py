@@ -207,3 +207,28 @@ async def test_watching_a_running_job_shows_its_model_read_only_and_gives_the_pi
     finally:
         module.live.end(running.id)
         set_context(None)
+
+
+async def test_a_removed_default_model_gives_one_notice_and_the_automatic_choice(
+    user: User, tmp_path: Path
+):
+    context = make_context(tmp_path, TwoModels())
+    context.settings.lemonade.chat_model = (
+        "Removed-Model-GGUF"  # saved long ago, since removed from Lemonade
+    )
+    set_context(context)
+    register_pages()
+    try:
+        await user.open("/")
+        await user.should_see("Lemonade healthy")
+        await settle()
+
+        (picker,) = elements(user, "model-select")
+        assert picker.value == "Fake-Chat"  # the model Lemonade has loaded: the page works as usual
+        assert user.notify.contains("Your default model 'Removed-Model-GGUF' is no longer on")
+        assert not user.notify.contains("is not downloaded on this Lemonade")  # and no error banner
+        assert (
+            context.settings.lemonade.chat_model == "Removed-Model-GGUF"
+        )  # the saved setting is left alone
+    finally:
+        set_context(None)

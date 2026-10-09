@@ -23,6 +23,7 @@ import time
 from collections.abc import Callable
 from datetime import UTC, date, datetime
 from pathlib import Path
+from typing import Literal
 
 from nicegui import Client, ui
 
@@ -46,7 +47,11 @@ from lemonrind.chats import (
 from lemonrind.lemonade.client import LemonadeError
 from lemonrind.lemonade.events import RequestStats
 from lemonrind.lemonade.models import ModelInfo
-from lemonrind.lemonade.selection import ModelSelectionError, pick_chat_model
+from lemonrind.lemonade.selection import (
+    ModelSelectionError,
+    default_is_missing,
+    pick_chat_model,
+)
 from lemonrind.modules import ImagesModule, KnowledgeModule, McpModule, SchedulerModule
 from lemonrind.modules.knowledge import OPTION_KEY as KNOWLEDGE_OPTION
 from lemonrind.modules.tool import ToolError
@@ -126,6 +131,9 @@ class ChatPage:
         self._picker_followed = (
             False  # the picker is showing a watched scheduled run's model (read-only)
         )
+        self._model_told: set[str] = (
+            set()
+        )  # model problems already shown on this page: each is said once
         self._task: asyncio.Task | None = None
         self._last_day: date | None = None
         self._ignore_model_change = False
@@ -419,17 +427,32 @@ class ChatPage:
             self._set_model_options(self._picked())
             return
 
+        default = self.context.settings.lemonade.chat_model
         try:
-            model = pick_chat_model(self.context.settings.lemonade.chat_model, health, models)
+            model = pick_chat_model("", health, models, default=default)
         except ModelSelectionError as error:
-            ui.notify(str(error), type="negative", multi_line=True)
+            # This check runs again at every health poll while no model is chosen, so say it once, not every time.
+            self._tell_once(str(error), type="negative")
             self._set_model_options("")
             return
+        if default_is_missing(default, models):
+            self._tell_once(
+                f"Your default model '{default}' is no longer on this Lemonade, so {model} is being used. Pick "
+                "another from the model list, or change the default in Settings > Lemonade.",
+                type="warning",
+            )
         self.conversation.model = model
         self._set_model_options(model)
         if model not in {m.model_name for m in health.all_models_loaded}:
             await self._load_model(model)
         self._update_context_label()
+
+    def _tell_once(self, message: str, *, type: Literal["negative", "warning"]) -> None:
+        """Show a notice unless this page has already shown exactly this one."""
+        if message in self._model_told:
+            return
+        self._model_told.add(message)
+        ui.notify(message, type=type, multi_line=True, timeout=15000)
 
     def _gone(self) -> bool:
         """Has this page been closed? Updating a widget of a closed page makes NiceGUI log an error."""

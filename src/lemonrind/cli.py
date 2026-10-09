@@ -87,7 +87,9 @@ async def run(args: argparse.Namespace) -> int:
     # Database has __enter__/__exit__, so ``with`` closes it however we leave the block.
     with Database(db_path) as db:
         async with LemonadeClient(settings.lemonade) as client:
-            model = await choose_model(client, args.model or settings.lemonade.chat_model, console)
+            model = await choose_model(
+                client, args.model or "", console, default=settings.lemonade.chat_model
+            )
             if model is None:
                 return 1
             # The modules (utilities, web search, files, ...) the model may use through tools.

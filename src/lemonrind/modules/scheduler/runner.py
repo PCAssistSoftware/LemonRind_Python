@@ -209,7 +209,9 @@ class JobRunner:
         """The job's own model if it names one, else the usual rule for picking a chat model."""
         health = await self._client.health()
         models = await self._client.list_models()
-        return pick_chat_model(job.model or self._settings.lemonade.chat_model, health, models)
+        return pick_chat_model(
+            job.model, health, models, default=self._settings.lemonade.chat_model
+        )
 
     def _system_prompt(self) -> str:
         from lemonrind.chats import (

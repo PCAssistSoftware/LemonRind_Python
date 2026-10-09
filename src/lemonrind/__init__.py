@@ -6,4 +6,4 @@ folder is importable". The ``src/`` layout (code under ``src/lemonrind`` rather 
 project root) stops tests from accidentally importing the source folder instead of the installed package.
 """
 
-__version__ = "0.2.7"
+__version__ = "0.2.8"

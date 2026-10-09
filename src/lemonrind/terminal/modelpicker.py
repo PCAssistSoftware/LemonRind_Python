@@ -15,10 +15,12 @@ from rich.console import Console
 
 from lemonrind.lemonade import LemonadeClient
 from lemonrind.lemonade.client import LemonadeError
-from lemonrind.lemonade.selection import ModelSelectionError, pick_chat_model
+from lemonrind.lemonade.selection import ModelSelectionError, default_is_missing, pick_chat_model
 
 
-async def choose_model(client: LemonadeClient, requested: str, console: Console) -> str | None:
+async def choose_model(
+    client: LemonadeClient, requested: str, console: Console, *, default: str = ""
+) -> str | None:
     """Check Lemonade is reachable, pick a chat model, and load it if it is not loaded already."""
     try:
         health = await client.health()
@@ -29,10 +31,16 @@ async def choose_model(client: LemonadeClient, requested: str, console: Console)
     console.print(f"[green]Connected to Lemonade[/green] [dim]({client.base_url})[/dim]")
 
     try:
-        requested = pick_chat_model(requested, health, models)
+        picked = pick_chat_model(requested, health, models, default=default)
     except ModelSelectionError as error:
         console.print(f"[red]{error}[/red]")
         return None
+    if not requested and default_is_missing(default, models):
+        console.print(
+            f"[yellow]Your default model '{default}' is no longer on this Lemonade, so {picked} is used instead. "
+            "Change the default in Settings > Lemonade (web) or choose one with /model.[/yellow]"
+        )
+    requested = picked
     loaded = {m.model_name for m in health.all_models_loaded}
     if requested not in loaded:
         try:

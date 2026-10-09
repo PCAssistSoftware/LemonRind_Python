@@ -2,6 +2,12 @@
 
 What changed in each version of the Python edition, newest first. Each entry is dated, and a change is added here when it is pushed.
 
+## 0.2.8 - 09-10-2026
+
+### Fixed
+
+- **A removed default model no longer causes a red banner that keeps coming back.** If the default chat model saved in Settings was later removed from Lemonade, the page showed "Model '...' is not downloaded on this Lemonade" again at every health check, and scheduled jobs without a model of their own failed. Now the app carries on with the model Lemonade has loaded (or the smallest tool-capable chat model), says once that your default is gone, and leaves your saved setting alone. A model you name yourself (`--model`, or a job's own model) is still an error if it is missing.
+
 ## 0.2.7 - 09-10-2026
 
 ### Added

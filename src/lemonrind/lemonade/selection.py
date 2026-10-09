@@ -52,11 +52,22 @@ def _best_default(models: Sequence[ModelInfo]) -> str:
     return min(pool, key=lambda m: m.size if m.size is not None else float("inf")).id
 
 
-def pick_chat_model(requested: str, health: Health, models: Sequence[ModelInfo]) -> str:
+def default_is_missing(default: str, models: Sequence[ModelInfo]) -> bool:
+    """Is a saved default model named, but no longer on this Lemonade (removed, renamed or replaced)?"""
+    return bool(default) and default not in {m.id for m in models}
+
+
+def pick_chat_model(
+    requested: str, health: Health, models: Sequence[ModelInfo], *, default: str = ""
+) -> str:
     """Return the id of the chat model to use.
 
-    * ``requested`` (from the settings or the command line) wins if Lemonade has it downloaded.
-    * With nothing requested, use the model Lemonade has loaded *if it is a chat model*. The "loaded" model
+    * ``requested`` (a model asked for by name: ``--model``, or a scheduled job's own model) wins if Lemonade has it
+      downloaded, and is an error if not: the person named it, so quietly using another would be wrong.
+    * ``default`` (the default chat model saved in Settings) is used if Lemonade has it. If it is gone, it is
+      ignored and the choice below is made instead, because a setting made months ago must not stop the app working
+      the day that model is removed. Callers use ``default_is_missing`` to tell the person.
+    * With nothing named, use the model Lemonade has loaded *if it is a chat model*. The "loaded" model
       is simply whatever was loaded most recently, which can be an embedding model used by a background
       job, so it is only trusted when it really is a chat model; failing that, any loaded chat model.
     * Otherwise fall back to the smallest tool-capable chat model (see ``_best_default``).
@@ -69,6 +80,8 @@ def pick_chat_model(requested: str, health: Health, models: Sequence[ModelInfo])
                 f"Model '{requested}' is not downloaded on this Lemonade. Chat models available: {available}"
             )
         return requested
+    if default and default in {m.id for m in models}:
+        return default
     if health.model_loaded in chat_models:
         return health.model_loaded or ""
     # The newest model is not a chat model (the memory module just used the embedding model, say), but

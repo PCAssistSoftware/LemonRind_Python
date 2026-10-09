@@ -3,7 +3,11 @@
 import pytest
 
 from lemonrind.lemonade.models import Health, LoadedModel, ModelInfo
-from lemonrind.lemonade.selection import ModelSelectionError, pick_chat_model
+from lemonrind.lemonade.selection import (
+    ModelSelectionError,
+    default_is_missing,
+    pick_chat_model,
+)
 
 MODELS = [
     ModelInfo(id="Chat-A", labels=["chat"], downloaded=True),
@@ -81,3 +85,24 @@ def test_without_any_tool_capable_model_the_smallest_chat_model_is_chosen():
         ModelInfo(id="A", labels=["chat"], downloaded=True),  # size unknown: sorts last
     ]
     assert pick_chat_model("", health(None), models) == "B"
+
+
+def test_a_saved_default_is_used_when_lemonade_has_it():
+    assert pick_chat_model("", health("Chat-A"), MODELS, default="Chat-B") == "Chat-B"
+
+
+def test_a_saved_default_that_is_gone_is_ignored_in_favour_of_the_usual_choice():
+    # the model the person once chose was removed from Lemonade: no error, the automatic choice is made instead
+    assert pick_chat_model("", health("Chat-B"), MODELS, default="Removed-Model") == "Chat-B"
+    assert pick_chat_model("", health(None), MODELS, default="Removed-Model") == "Chat-B"
+
+
+def test_a_model_asked_for_by_name_is_still_an_error_when_missing_even_with_a_default():
+    with pytest.raises(ModelSelectionError, match="Removed-Model"):
+        pick_chat_model("Removed-Model", health("Chat-A"), MODELS, default="Chat-A")
+
+
+def test_default_is_missing_only_when_one_is_named_and_not_listed():
+    assert default_is_missing("Removed-Model", MODELS)
+    assert not default_is_missing("Chat-A", MODELS)
+    assert not default_is_missing("", MODELS)  # no default saved: nothing to be missing
