@@ -116,7 +116,7 @@ class JobRunner:
         session = self._chats.create_session(job.name)
         self._chats.add_tag(session.id, SCHEDULED_TAG)
         self._chats.add_tag(session.id, RUNNING_TAG)
-        self.live.start(session.id, job.prompt)
+        self.live.start(session.id, job.prompt, job.name)
         try:
             return await self._execute(job, session)
         except asyncio.CancelledError:
@@ -144,6 +144,8 @@ class JobRunner:
         conversation: Conversation | None = None
         try:
             model = await self._choose_model(job)
+            if (live_run := self.live.get(session.id)) is not None:
+                live_run.model = model  # so the page can tell which model this run is using
             registry = self._registry()
             conversation = Conversation(
                 client=self._client,

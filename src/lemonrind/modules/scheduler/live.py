@@ -33,9 +33,11 @@ TRIM_TO = 2000
 class LiveRun:
     """The events of one run that is going now, and the pages following it."""
 
-    def __init__(self, session_id: str, prompt: str) -> None:
+    def __init__(self, session_id: str, prompt: str, name: str = "") -> None:
         self.session_id = session_id
         self.prompt = prompt
+        self.name = name  # the job's name, for a page that says which job is running
+        self.model = ""  # the model the run uses; filled in once it has been chosen (a moment after the run starts)
         self.events: list[object] = []
         self.finished = False
         self._followers: dict[int, tuple[Callable[[object], None], Callable[[], None]]] = {}
@@ -86,10 +88,14 @@ class LiveRuns:
     def __init__(self) -> None:
         self._runs: dict[str, LiveRun] = {}
 
-    def start(self, session_id: str, prompt: str) -> LiveRun:
-        run = LiveRun(session_id, prompt)
+    def start(self, session_id: str, prompt: str, name: str = "") -> LiveRun:
+        run = LiveRun(session_id, prompt, name)
         self._runs[session_id] = run
         return run
+
+    def running(self) -> list[LiveRun]:
+        """Every run going now."""
+        return list(self._runs.values())
 
     def get(self, session_id: str) -> LiveRun | None:
         return self._runs.get(session_id)

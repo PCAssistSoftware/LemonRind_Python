@@ -59,7 +59,7 @@ from lemonrind.webui.bubbles import (
     view_for,
 )
 from lemonrind.webui.context import AppContext, get_context
-from lemonrind.webui.dialogs import ask_image_size, ask_tool_approval
+from lemonrind.webui.dialogs import ask_confirm, ask_image_size, ask_tool_approval
 from lemonrind.webui.inspectors import (
     show_logs,
     show_system_prompt,
@@ -123,6 +123,9 @@ class ChatPage:
         self._context_windows: dict[str, int] = {}
         self._healthy = False
         self._busy = False
+        self._picker_followed = (
+            False  # the picker is showing a watched scheduled run's model (read-only)
+        )
         self._task: asyncio.Task | None = None
         self._last_day: date | None = None
         self._ignore_model_change = False
@@ -158,6 +161,7 @@ class ChatPage:
         self._build_footer()
         ui.timer(HEALTH_POLL_SECONDS, self._poll_health)
         ui.timer(5, self._check_scheduled_runs)
+        ui.timer(1.5, self._update_job_note)
 
         await (
             self.client.connected()
@@ -180,6 +184,12 @@ class ChatPage:
             with ui.row().classes("items-center no-wrap gap-1") as self.loading_row:
                 ui.spinner(size="sm")
                 self.loading_label = ui.label().classes("text-caption")
+            # One line that is cut off with "..." if it is long (the whole text is in the tooltip), and left out on a
+            # narrow window, where it would push the header's buttons onto a second row.
+            self.job_note = ui.label().classes("text-caption lr-muted gt-sm lr-one-line")
+            self.job_note.style("max-width: 28rem").mark("job-running-note")
+            self.job_note_tip = self.job_note.tooltip("")
+            self.job_note.set_visibility(False)
             self.loading_row.set_visibility(False)
             self.title = (
                 ui.label("Lemon Rind")
@@ -448,6 +458,59 @@ class ChatPage:
         finally:
             self.loading_row.set_visibility(False)
 
+    def _running_jobs(self) -> list:
+        """The scheduled runs going now (empty when the Scheduler module is off or idle)."""
+        module = self._module(SchedulerModule)
+        return module.live.running() if module is not None else []
+
+    def _update_job_note(self) -> None:
+        """Beside the model picker: which scheduled job is running, and with which model."""
+        if self._gone():
+            return
+        runs = self._running_jobs()
+        if not runs:
+            self.job_note.set_visibility(False)
+            return
+        text = "Job running: " + ", ".join(
+            f"{run.name or 'scheduled job'} ({run.model or 'choosing a model'})" for run in runs
+        )
+        self.job_note.text = text
+        self.job_note_tip.text = text
+        self.job_note.set_visibility(True)
+
+    async def _ok_to_switch_while_jobs_run(self, name: str) -> bool:
+        """Loading another model can push a running job's model out of Lemonade's memory, so ask first.
+
+        Picking the model the job itself is using needs no question. Nothing is blocked: Lemonade may have room for
+        both, which this app cannot know.
+        """
+        others = [run for run in self._running_jobs() if run.model != name]
+        if not others:
+            return True
+        using = "; ".join(
+            f"{run.name or 'A scheduled job'} is using {run.model or 'a model'}" for run in others
+        )
+        return await ask_confirm(
+            "A scheduled job is running",
+            f"{using}. Loading {name} may stop it. Switch anyway?",
+            ok_text="Switch anyway",
+        )
+
+    def _show_followed_model(self, model: str) -> None:
+        """While you watch a running job, the picker shows the job's model and cannot be changed."""
+        self._picker_followed = True
+        self._set_model_options(model or self._picked())
+        self.model_select.disable()
+
+    def _end_followed_model(self) -> None:
+        """Back to your own model (safe to call when nothing was being followed)."""
+        if not self._picker_followed:
+            return
+        self._picker_followed = False
+        self._set_model_options(self._picked())
+        if not self._busy:
+            self.model_select.enable()
+
     def _picked(self) -> str:
         """What the model list shows: the image model if one is picked, otherwise the chat model."""
         return self._image_model or self.conversation.model
@@ -464,12 +527,23 @@ class ChatPage:
         name = event.value
         if self._ignore_model_change or not name or name == self._picked():
             return
+        # While a running job is being watched the picker is read-only and shows the job's model. The change that puts
+        # that model there reaches this handler a moment later, after ``_ignore_model_change`` has been switched off
+        # again (NiceGUI runs an async handler as a separate task), so it is recognised by the flag and by being
+        # out of date: the box no longer shows the value this event carries.
+        if self._picker_followed or name != self.model_select.value:
+            return
         if is_header(name):  # a group heading is not a model
             self._set_model_options(self._picked())
             return
         if self._busy:
             ui.notify("Wait for the current reply to finish first.", type="warning")
             self._set_model_options(self._picked())
+            return
+        if not self._is_image_model(name) and not await self._ok_to_switch_while_jobs_run(name):
+            self._set_model_options(
+                self._picked()
+            )  # the person said no: the picker goes back to what it was
             return
         if self._is_image_model(name):
             images = self._module(ImagesModule)
@@ -934,6 +1008,7 @@ class ChatPage:
         if self._stop_following is not None:
             self._stop_following()
             self._stop_following = None
+        self._end_followed_model()
 
     def _follow_live(self, session: ChatSession) -> None:
         """Show a running scheduled job as it works: catch up on what has happened, then follow new events."""
@@ -952,6 +1027,7 @@ class ChatPage:
                 bubble.on_event(event)  # type: ignore[arg-type]
             bubble.repaint()
         ui.run_javascript("lrScrollDown(true)")
+        self._show_followed_model(live.model)
 
         def gone() -> bool:
             return self.messages.is_deleted or self.client.id not in Client.instances
@@ -960,6 +1036,10 @@ class ChatPage:
             if gone():
                 self._unfollow()
                 return
+            if live.model and self._picker_followed and self.model_select.value != live.model:
+                self._show_followed_model(
+                    live.model
+                )  # the run has chosen its model since you opened it
             # the job runs in another task, which has no page context of its own
             with self.messages:
                 bubble.on_event(event)  # type: ignore[arg-type]
@@ -967,6 +1047,7 @@ class ChatPage:
 
         def on_finished() -> None:
             if not gone():
+                self._end_followed_model()
                 asyncio.get_running_loop().create_task(self._after_live_run())
 
         self._stop_following = live.subscribe(on_event, on_finished)

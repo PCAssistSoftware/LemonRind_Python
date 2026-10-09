@@ -2,6 +2,13 @@
 
 What changed in each version of the Python edition, newest first. Each entry is dated, and a change is added here when it is pushed.
 
+## 0.2.6 - 09-10-2026
+
+### Added
+
+- **The model picker now knows about running scheduled jobs.** While a job runs, a note beside the picker says which job and which model ("Job running: Weekly report summary (Qwen3-8B-GGUF)"). If you pick a different model while a job is running, you are asked first, because loading another model can push the job's model out of Lemonade's memory and stop the job. Picking the job's own model needs no question, and nothing is blocked.
+- **Watching a running job shows its model.** While you watch a job's chat live, the picker shows the job's model and cannot be changed. When the job ends it goes back to your own model.
+
 ## 0.2.5 - 09-10-2026
 
 ### Fixed
