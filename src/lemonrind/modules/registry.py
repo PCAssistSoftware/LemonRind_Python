@@ -20,15 +20,20 @@ Python ideas used here:
 from __future__ import annotations
 
 import logging
+from collections import OrderedDict
 from collections.abc import Iterable
 
 from lemonrind.lemonade.events import ToolCall
 from lemonrind.modules.base import ChatContext, Module
-from lemonrind.modules.tool import Tool, ToolResult
+from lemonrind.modules.tool import Tool, ToolError, ToolResult, tool_from_function
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MAX_OUTPUT_CHARS = 12_000
+DEFAULT_MAX_OUTPUT_CHARS = 40_000
+READ_MORE = (
+    "read_more"  # the name of the built-in tool that reads on through a result that was cut short
+)
+HELD_RESULTS = 20  # how many cut-short results are kept for read_more (the newest)
 
 
 class ModuleRegistry:
@@ -38,6 +43,11 @@ class ModuleRegistry:
         self._modules = list(modules)
         self._started: set[str] = set()  # config keys of modules whose start-up has run
         self.max_output_chars = max_output_chars
+        self._held: OrderedDict[str, str] = (
+            OrderedDict()
+        )  # result id -> its whole text, oldest first
+        self._held_count = 0  # only ever grows, so an id is never reused
+        self._read_more_tool = tool_from_function(self.read_more, name=READ_MORE)
 
     # --- the modules ---------------------------------------------------------------------------------
 
@@ -80,7 +90,10 @@ class ModuleRegistry:
     # --- tools -------------------------------------------------------------------------------------------
 
     def get_enabled_tools(self) -> list[Tool]:
-        return [tool for module in self._modules if module.enabled for tool in module.get_tools()]
+        tools = [tool for module in self._modules if module.enabled for tool in module.get_tools()]
+        if tools:  # reading on is only worth offering when there is some other tool whose result can be cut short
+            tools.append(self._read_more_tool)
+        return tools
 
     def schemas(self) -> list[dict]:
         """The tool descriptions to send with a request (empty when no module offers a tool)."""
@@ -156,15 +169,73 @@ class ModuleRegistry:
                 f"There is no tool called '{call.name}'. Available tools: {available}.", True
             )
         result = await tool.run(call.arguments)
+        if tool.name == READ_MORE:
+            return (
+                result  # already one piece of the right size, with its own note about what is left
+            )
         return self._truncate(result)
 
+    # --- long results ---------------------------------------------------------------------------------------------
+
     def _truncate(self, result: ToolResult) -> ToolResult:
-        """Cap a huge result: it all goes into the model's limited context window."""
+        """Give the model one piece of a long result, and keep the whole so it can ask for the rest.
+
+        A long result goes into the model's limited context window, so only the first ``max_output_chars`` are sent.
+        The rest is not thrown away: the whole text is held under a short id, and the note at the end of the piece tells
+        the model how to read on with ``read_more``.
+        """
         if len(result.content) <= self.max_output_chars:
             return result
-        omitted = len(result.content) - self.max_output_chars
-        text = (
-            result.content[: self.max_output_chars]
-            + f"\n[... {omitted:,} more characters not shown]"
+        self._held_count += 1
+        result_id = f"r{self._held_count}"
+        self._held[result_id] = result.content
+        while len(self._held) > HELD_RESULTS:
+            self._held.popitem(last=False)  # forget the oldest
+        return ToolResult(self._piece(result_id, result.content, 0), result.is_error)
+
+    def _piece(self, result_id: str, content: str, start: int) -> str:
+        """``max_output_chars`` of ``content`` from ``start``, with a note on how to continue if there is more."""
+        end = start + self.max_output_chars
+        if end < len(content):
+            end = self._tidy_end(content, start, end)
+        piece = content[start:end]
+        if end >= len(content):
+            return piece + (f"\n[End of result {result_id}.]" if start else "")
+        return (
+            piece
+            + f"\n[... {len(content) - end:,} more characters not shown. To read on, call {READ_MORE} with "
+            f'result="{result_id}" and start={end}.]'
         )
-        return ToolResult(text, result.is_error)
+
+    @staticmethod
+    def _tidy_end(content: str, start: int, end: int) -> int:
+        """Move a piece's end back to the end of a line (or at least a word), so a piece never stops half way through
+        a word and the next one never starts in the middle of one. Only the last tenth of the piece is searched, so a
+        text with no breaks at all is simply cut at the limit."""
+        earliest = end - max(1, (end - start) // 10)
+        for separator in ("\n", " "):
+            found = content.rfind(separator, earliest, end)
+            if found != -1:
+                return found + 1
+        return end
+
+    def read_more(self, result: str, start: int) -> str:
+        """Read on through a tool result that was cut short. A result that is too long is shown only in part, and ends with a note giving the result id and the number to use here as start.
+
+        Args:
+            result: The id from the note at the end of the cut-short result, for example r3.
+            start: The character number to continue from, as given in that note.
+        """
+        content = self._held.get(result.strip())
+        if content is None:
+            kept = ", ".join(self._held) or "none"
+            raise ToolError(
+                f"There is nothing saved as '{result}'. Only the last {HELD_RESULTS} long results are kept "
+                f"(now: {kept}); run the tool again to get a fresh copy."
+            )
+        if not 0 <= start < len(content):
+            raise ToolError(
+                f"start must be between 0 and {len(content) - 1:,} for result {result}."
+            )
+        self._held.move_to_end(result.strip())  # still in use: keep it longer
+        return self._piece(result.strip(), content, start)

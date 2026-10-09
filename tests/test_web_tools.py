@@ -13,7 +13,7 @@ from lemonrind.config import Settings, WebSearchSettings
 from lemonrind.modules import search_engines
 from lemonrind.modules.ssrf import FetchError, SafeFetcher, is_public_ipv4
 from lemonrind.modules.tool import ToolError
-from lemonrind.modules.web_reader import MAX_TEXT_CHARS, WebReaderModule
+from lemonrind.modules.web_reader import WebReaderModule
 from lemonrind.modules.web_search import WebSearchModule
 from lemonrind.security import sanitize_untrusted
 
@@ -656,14 +656,15 @@ async def test_read_webpage_returns_labelled_readable_text_without_navigation_an
         assert noise not in text
 
 
-async def test_read_webpage_shortens_long_pages_and_explains_empty_or_unreadable_ones():
+async def test_read_webpage_returns_a_long_page_whole_and_explains_empty_or_unreadable_ones():
     long_page = "<html><body><p>" + "word " * 5000 + "</p></body></html>"
     long_text = await reader(
         handler=lambda r: httpx.Response(
             200, headers={"content-type": "text/html"}, content=long_page.encode()
         )
     ).read_webpage("http://pages.example/long")
-    assert long_text.endswith("... [truncated]") and len(long_text) < MAX_TEXT_CHARS + 400
+    # the reader no longer cuts a page itself: a result that is too long is cut (and can be read on) by the registry
+    assert long_text.count("word") == 5000 and "[truncated]" not in long_text
 
     script_only = "<html><body><script>render()</script></body></html>"
     with pytest.raises(ToolError, match="may need JavaScript"):
@@ -763,3 +764,46 @@ async def test_a_fetch_that_somehow_yields_neither_a_page_nor_a_redirect_is_an_e
     fetcher._one_hop = nothing  # type: ignore[method-assign]
     with pytest.raises(FetchError, match="could not be read"):
         await fetcher.fetch("https://example.com/")
+
+
+async def test_a_page_longer_than_one_piece_is_read_on_to_the_end_through_read_more():
+    from lemonrind.lemonade import ToolCall
+    from lemonrind.modules.registry import ModuleRegistry
+
+    numbered = " ".join(f"item{n:04d}" for n in range(1, 2001))  # 2,000 words, 18,000 characters
+    page = f"<html><body><p>{numbered}</p></body></html>"
+    module = reader(
+        handler=lambda r: httpx.Response(
+            200, headers={"content-type": "text/html"}, content=page.encode()
+        )
+    )
+    registry = ModuleRegistry([module], max_output_chars=6000)
+
+    first = await registry.run(
+        ToolCall("c1", "read_webpage", json.dumps({"url": "http://pages.example/list"}))
+    )
+    assert "item0001" in first.content and "item2000" not in first.content
+    assert 'read_more with result="r1" and start=' in first.content
+
+    import re
+
+    seen = first.content
+    note = first.content
+    for _ in range(
+        10
+    ):  # follow the notes, as the model would: continue from the number each one gives
+        start = int(re.search(r"start=(\d+)", note).group(1))  # type: ignore[union-attr]
+        piece = await registry.run(
+            ToolCall("c2", "read_more", json.dumps({"result": "r1", "start": start}))
+        )
+        assert not piece.is_error
+        seen += "\n" + piece.content  # (a note ends without a line break: keep the pieces apart)
+        note = piece.content
+        if "[End of result r1.]" in piece.content:
+            break
+    else:
+        raise AssertionError("never reached the end of the result")
+
+    # every item arrived, once, in order: nothing was lost between the pieces
+    found = [word for word in seen.replace("\n", " ").split() if word.startswith("item")]
+    assert [w for w in found if w[4:].isdigit()] == [f"item{n:04d}" for n in range(1, 2001)]

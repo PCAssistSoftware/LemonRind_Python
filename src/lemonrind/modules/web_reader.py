@@ -30,7 +30,6 @@ from lemonrind.modules.ssrf import FetchError, SafeFetcher
 from lemonrind.modules.tool import Tool, ToolError, tool_from_function
 from lemonrind.security import sanitize_untrusted
 
-MAX_TEXT_CHARS = 8000  # keeps one page from filling the model's context in a single turn
 # Parts of a page that are never the content: navigation and footers just waste tokens.
 BOILERPLATE_TAGS = frozenset({"nav", "footer", "header"})
 
@@ -106,8 +105,6 @@ class WebReaderModule(Module):
                 "The page has no readable text (it may need JavaScript to show its content; "
                 "the Firecrawl engine can read such pages)."
             )
-        if len(text) > MAX_TEXT_CHARS:
-            text = text[:MAX_TEXT_CHARS] + "... [truncated]"
         heading = f"Title: {sanitize_untrusted(title) or '(untitled)'}"
         return f"{_label(page.url)}\n\n{heading}\n\n{sanitize_untrusted(text)}"
 

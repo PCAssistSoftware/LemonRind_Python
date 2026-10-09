@@ -195,6 +195,7 @@ A deliberate design priority, because a local model's context is precious:
 - When a chat nears the model's limit, the oldest messages are **summarised** into a running paragraph (the saved chat keeps everything)
 - Memory is capped and filtered by similarity, so old chats do not bloat every new prompt
 - Only the newest picture in a chat is sent to the model again
+- A long tool result (a big web page, say) is handed over in pieces, and the model reads on with a built-in `read_more` tool, so nothing is lost and no single result fills the context
 
 ### Persona
 

@@ -2,6 +2,19 @@
 
 What changed in each version of the Python edition, newest first. Each entry is dated, and a change is added here when it is pushed.
 
+## 0.2.7 - 09-10-2026
+
+### Added
+
+- **A long tool result can now be read to the end.** A big web page (or any long result) used to be cut off after 12,000 characters and the rest was lost, so the model went round in circles asking for "the rest" or rebuilding a page from other pages. Now the cut-off note tells the model how to continue, and a built-in `read_more` tool gives the next piece, and the next, until the end. It works for every tool: web pages from any search service, Playwright, MCP servers and the file tools.
+- **A setting for the size of a piece:** Settings > Modules > "Longest piece of a tool result (characters)". Raise it if your model has a large context window.
+
+### Changed
+
+- **The default piece is 40,000 characters** (it was 12,000), about 10,000 tokens. If you saved your settings before, they still hold the old 12,000: change the box in Settings > Modules to use the new default.
+- **The page reader no longer cuts a page at 8,000 characters** of its own: it gives the whole page to the same piece-by-piece rule.
+- Pieces end at the end of a line (or at least a word), never in the middle of one.
+
 ## 0.2.6 - 09-10-2026
 
 ### Added

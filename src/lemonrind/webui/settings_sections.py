@@ -614,11 +614,35 @@ def build_modules(settings: Settings, registry: ModuleRegistry | None) -> Applie
         .classes("w-full q-mt-sm")
     )
 
+    piece = (
+        ui.number(
+            "Longest piece of a tool result (characters)",
+            value=settings.modules.max_tool_output_chars,
+            min=500,
+            max=1_000_000,
+            step=5000,
+            precision=0,
+        )
+        .props("outlined dense")
+        .classes("w-full q-mt-sm")
+        .mark("modules-output-chars")
+    )
+    _note(
+        "A long result (a big web page, say) is given to the model in pieces of this size, and the model asks for the "
+        "next piece with the built-in read_more tool. About four characters make a token, so 40,000 is about 10,000 "
+        "tokens. Raise it if your model has a large context window; lower it if the window is small."
+    )
+
     def apply() -> str | None:
         for key, switch in switches.items():
             settings.modules.enabled[key] = bool(switch.value)
         if rounds.value:
             settings.modules.max_tool_rounds = max(1, min(100, int(rounds.value)))
+        if piece.value:
+            settings.modules.max_tool_output_chars = max(500, min(1_000_000, int(piece.value)))
+            registry.max_output_chars = (
+                settings.modules.max_tool_output_chars
+            )  # the next result already uses it
         return None
 
     return apply

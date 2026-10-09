@@ -219,7 +219,9 @@ class ModulesSettings(BaseModel):
     enabled: dict[str, bool] = Field(default_factory=dict)
     # How many request/tool/request cycles one message may use before the model must answer.
     max_tool_rounds: int = Field(default=10, ge=1, le=100)
-    max_tool_output_chars: int = Field(default=12_000, ge=500)
+    # The longest piece of one tool result the model is given at once (about four characters to a token). A longer
+    # result is held back and read on in pieces of this size with the built-in read_more tool.
+    max_tool_output_chars: int = Field(default=40_000, ge=500, le=1_000_000)
     web_search: WebSearchSettings = Field(default_factory=WebSearchSettings)
     filesystem: FileSystemSettings = Field(default_factory=FileSystemSettings)
     memory: MemorySettings = Field(default_factory=MemorySettings)

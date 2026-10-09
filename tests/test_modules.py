@@ -74,7 +74,11 @@ def test_only_enabled_modules_offer_tools():
 
     names = [schema["function"]["name"] for schema in registry.schemas()]
 
-    assert names == ["current_time", "calculate"]
+    assert names == [
+        "current_time",
+        "calculate",
+        "read_more",
+    ]  # read_more is built in, offered with any tool
 
 
 def test_a_module_without_a_setting_uses_its_default():
@@ -117,7 +121,11 @@ async def test_a_module_that_fails_to_start_does_not_stop_the_others_and_is_retr
     )  # the failed module is tried again, since it never counted as started
 
     assert broken.events == ["start", "start"]
-    assert [t.name for t in registry.get_enabled_tools()][-2:] == ["current_time", "calculate"]
+    assert [t.name for t in registry.get_enabled_tools()][-3:] == [
+        "current_time",
+        "calculate",
+        "read_more",
+    ]
 
 
 async def test_running_a_tool_finds_it_by_name_and_reports_unknown_names():
@@ -138,13 +146,67 @@ async def test_a_disabled_modules_tools_cannot_be_called():
     assert (await registry.run(call("echo", text="hi"))).is_error
 
 
-async def test_long_results_are_truncated_with_a_note():
+async def test_long_results_are_cut_with_a_note_that_says_how_to_read_on():
     registry = ModuleRegistry([RecordingModule(Settings())], max_output_chars=30)
 
     result = await registry.run(call("big"))
 
     assert result.content.startswith("x" * 30)
-    assert "70 more characters" in result.content
+    assert "70 more characters not shown" in result.content
+    assert 'read_more with result="r1" and start=30' in result.content
+
+
+async def test_read_more_gives_the_rest_piece_by_piece_until_the_end():
+    registry = ModuleRegistry([RecordingModule(Settings())], max_output_chars=30)
+    first = await registry.run(call("big"))  # "x" * 100: three pieces of 30 and a last of 10
+    assert first.content.count("x") == 30
+
+    second = await registry.run(call("read_more", result="r1", start=30))
+    third = await registry.run(call("read_more", result="r1", start=60))
+    last = await registry.run(call("read_more", result="r1", start=90))
+
+    assert second.content.startswith("x" * 30) and "start=60" in second.content
+    assert third.content.startswith("x" * 30) and "start=90" in third.content
+    assert last.content.startswith("x" * 10) and "[End of result r1.]" in last.content
+    assert "more characters" not in last.content
+    assert not any(r.is_error for r in (first, second, third, last))
+
+
+async def test_read_more_is_offered_only_when_some_other_tool_is_and_asks_for_no_permission():
+    registry = ModuleRegistry([RecordingModule(Settings())])
+    names = [schema["function"]["name"] for schema in registry.schemas()]
+    assert "read_more" in names
+    assert not registry.requires_approval(call("read_more", result="r1", start=0))
+
+    off = Settings()
+    off.modules.enabled["recording"] = False
+    assert (
+        ModuleRegistry([RecordingModule(off)]).schemas() == []
+    )  # nothing to read on from: not offered either
+
+
+async def test_read_more_explains_a_wrong_id_or_position_and_forgets_the_oldest_results():
+    registry = ModuleRegistry([RecordingModule(Settings())], max_output_chars=30)
+    for _ in range(25):  # 25 long results: only the newest 20 are kept
+        await registry.run(call("big"))
+
+    gone = await registry.run(call("read_more", result="r1", start=0))
+    assert gone.is_error and "nothing saved as 'r1'" in gone.content and "r25" in gone.content
+    beyond = await registry.run(call("read_more", result="r25", start=100))
+    assert beyond.is_error and "between 0 and 99" in beyond.content
+    negative = await registry.run(call("read_more", result="r25", start=-5))
+    assert negative.is_error
+    kept = await registry.run(call("read_more", result="r6", start=0))  # the oldest one still held
+    assert not kept.is_error and kept.content.startswith("x" * 30)
+
+
+async def test_results_are_not_cut_when_they_fit():
+    registry = ModuleRegistry([RecordingModule(Settings())], max_output_chars=200)
+
+    result = await registry.run(call("big"))  # 100 characters
+
+    assert result.content == "x" * 100  # no note, nothing held
+    assert (await registry.run(call("read_more", result="r1", start=0))).is_error
 
 
 def test_build_registry_lists_every_module_with_its_own_key():
@@ -360,3 +422,22 @@ async def test_web_search_needs_an_address():
     settings.modules.web_search.searxng_url = " "
     result = await WebSearchModule(settings).get_tools()[0].run('{"query": "x"}')
     assert result.is_error and "not set up" in result.content
+
+
+async def test_pieces_end_at_a_line_never_in_the_middle_of_one():
+    from lemonrind.modules.tool import Tool
+
+    async def lines(_arguments: object) -> str:
+        return "\n".join(f"line {n:03d} of the listing" for n in range(1, 40))
+
+    class Lines(RecordingModule):
+        def get_tools(self) -> list[Tool]:
+            return [Tool("lines", "d", {"type": "object", "properties": {}}, lines)]
+
+    registry = ModuleRegistry([Lines(Settings())], max_output_chars=200)
+
+    first = await registry.run(call("lines"))
+
+    body = first.content.split("\n[...")[0]
+    assert body.endswith("listing\n")  # whole lines only: the piece stops after a line break
+    assert body.count("\n") >= 5 and "start=" in first.content

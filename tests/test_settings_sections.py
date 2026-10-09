@@ -21,7 +21,7 @@ from lemonrind.webui.settings_sections import (
     human_size,
     storage_breakdown,
 )
-from tests.conftest import open_section
+from tests.conftest import elements, open_section
 
 
 def box(user: User, marker: str):
@@ -524,3 +524,27 @@ def test_with_nothing_unexplained_there_is_no_other_row(tmp_path: Path):
     assert [label for label, _ in rows][0] == "Database"
     assert not any(label.startswith("Other") for label, _ in rows)
     assert total == 10
+
+
+async def test_the_longest_tool_result_piece_is_set_in_modules_and_applies_at_once(
+    user: User, web: AppContext
+):
+    await open_section(user, "modules")
+    (box,) = elements(user, "modules-output-chars")
+    assert box.value == web.settings.modules.max_tool_output_chars
+
+    box.value = 80_000
+    user.find(marker="settings-save").click()
+    await settle()
+
+    assert web.settings.modules.max_tool_output_chars == 80_000
+    assert (
+        web.modules is not None and web.modules.max_output_chars == 80_000
+    )  # the next result already uses it
+    assert saved_settings(web)["modules"]["max_tool_output_chars"] == 80_000
+
+
+def test_the_default_piece_size_is_forty_thousand_characters():
+    from lemonrind.modules.registry import DEFAULT_MAX_OUTPUT_CHARS
+
+    assert config.Settings().modules.max_tool_output_chars == 40_000 == DEFAULT_MAX_OUTPUT_CHARS
