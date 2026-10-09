@@ -172,8 +172,9 @@ class SchedulerSettings(BaseModel):
     # How many request/tool/request cycles one run may use. A research job that searches and reads many pages
     # needs far more than a chat message does, and nobody is there to say "keep going".
     max_tool_rounds: int = Field(default=100, ge=1, le=500)
-    # Cap on one reply's length, so a runaway generation cannot eat the whole time limit.
-    max_output_tokens: int = Field(default=16384, ge=256)
+    # Cap on one reply's length (tokens, and a model's thinking counts), so a runaway generation cannot eat the
+    # whole time limit. A model that thinks at length and then writes a long report needs room for both.
+    max_output_tokens: int = Field(default=32768, ge=256)
     # A job that was due while the app was closed runs once when the app starts, but only if it was missed by
     # less than this (APScheduler's misfire grace time; never less than a minute). A "Monday 9am" job should
     # not fire on Thursday evening just because the computer was off.

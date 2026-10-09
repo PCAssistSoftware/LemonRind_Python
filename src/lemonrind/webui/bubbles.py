@@ -327,6 +327,10 @@ class AssistantBubble:
                 else "The reply was empty."
             )
             self._note_text(hint + " It was not saved.")
+        elif reply.finish_reason == "length":
+            self._note_text(
+                "The reply reached the output limit (thinking counts towards it), so it may be incomplete."
+            )
         ui.run_javascript("lrScrollDown(false)")
 
     def repaint_soon(self, delay: float = 0.3) -> None:

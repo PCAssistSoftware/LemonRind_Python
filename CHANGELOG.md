@@ -2,6 +2,20 @@
 
 What changed in each version of the Python edition, newest first. Each entry is dated, and a change is added here when it is pushed.
 
+## 0.2.9 - 09-10-2026
+
+### Fixed
+
+- **A scheduled run whose reply was cut off is no longer reported as "ok".** A model that thinks at length and then writes a long report can use up the limit on one reply (its thinking counts towards it), so the report stopped part way, in the middle of a table in one case, and the run still looked successful. Such a run is now marked "cut short", the run's chat ends with a warning that says what happened and what to change, and a chat reply that hit the limit says it may be incomplete.
+
+### Changed
+
+- The default for the longest reply in a scheduled run is now 32,768 tokens (it was 16,384). If you saved the old number, raise it in Settings > Scheduler.
+
+### Added
+
+- Settings > Scheduler now has boxes for the most tool rounds and the longest reply, next to the time limit. Changes are saved at once and apply from the next run.
+
 ## 0.2.8 - 09-10-2026
 
 ### Fixed

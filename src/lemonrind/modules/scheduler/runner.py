@@ -177,6 +177,17 @@ class JobRunner:
                 return self._failure(job, session, "The model produced no answer.")
 
             self._chats.rename_session(session.id, job.name)
+            if reply.finish_reason == "length":
+                # The model hit the limit on one reply, so what it wrote stops part way (a report cut off in the
+                # middle of a table, say). Calling that "ok" would hide it.
+                self._chats.add_message(
+                    session.id,
+                    "assistant",
+                    f"Warning: the model's reply was cut off at the output limit ({config.max_output_tokens:,} tokens, "
+                    "which includes its thinking), so it is probably incomplete. Raise 'Longest reply' in "
+                    "Settings > Scheduler, use a model that thinks less, or ask for a shorter report.",
+                )
+                return JobOutcome("cut short", session.id, "the reply reached the output limit")
             if len(reply.round_stats) >= config.max_tool_rounds:
                 self._chats.add_message(
                     session.id,

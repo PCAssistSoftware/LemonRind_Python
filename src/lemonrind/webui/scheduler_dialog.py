@@ -21,6 +21,7 @@ from datetime import UTC, datetime
 
 from nicegui import ui
 
+from lemonrind.config import SchedulerSettings
 from lemonrind.modules.scheduler import CronError, DuplicateJobError, ScheduledJob, SchedulerModule
 from lemonrind.modules.scheduler.cron import (
     HELP_TEXT,
@@ -56,6 +57,7 @@ STATUS_COLOURS = {
     "timed out": "negative",
     "interrupted": "warning",
     "stopped": "warning",
+    "cut short": "warning",
     "missed": "warning",
 }
 
@@ -65,13 +67,14 @@ def build_scheduler(
     chat_models: list[str],
     open_chat: Callable[[str], None],
     *,
-    time_limit_minutes: float | None = None,
-    on_time_limit: Callable[[float], None] | None = None,
+    limits: SchedulerSettings | None = None,
+    save: Callable[[], None] | None = None,
 ) -> None:
     """Draw the section into the current container. ``open_chat(session_id)`` jumps to a run's chat.
 
-    ``time_limit_minutes`` and ``on_time_limit`` add a box for how long one run may take: the box shows the current
-    limit, and ``on_time_limit`` is called with the new number of minutes whenever it is changed to a valid value.
+    ``limits`` (the scheduler's settings) and ``save`` add boxes for how long a run may take, how many tool rounds
+    it may use and how long one reply may be. Each box shows the current value; a change to a valid value is made
+    at once and ``save`` is called (this section has no Save button).
     """
     seen_runs = module.runs_finished
 
@@ -176,8 +179,8 @@ def build_scheduler(
         ui.button("New job", icon="add", on_click=lambda: edit(None)).props("color=primary").mark(
             "job-new"
         )
-        if time_limit_minutes is not None and on_time_limit is not None:
-            _time_limit_box(time_limit_minutes, on_time_limit)
+        if limits is not None and save is not None:
+            _limit_boxes(limits, save)
 
     ui.timer(1.5, poll)
 
@@ -200,31 +203,79 @@ TIME_LIMIT_MIN_MINUTES = 1
 TIME_LIMIT_MAX_MINUTES = (
     24 * 60
 )  # a day: more than that is far more likely a typing slip than a plan
+ROUNDS_MIN, ROUNDS_MAX = 1, 500
+REPLY_MIN, REPLY_MAX = 256, 131_072
 
 
-def _time_limit_box(minutes: float, on_change: Callable[[float], None]) -> None:
-    """The "how long may one run take" box. A value outside the allowed range is ignored (the box shows a warning)."""
+def _limit_boxes(limits: SchedulerSettings, save: Callable[[], None]) -> None:
+    """The boxes for how long a run may take, how many rounds it may use and how long one reply may be.
 
-    def changed(event) -> None:
-        value = event.value
-        if value is None or not (TIME_LIMIT_MIN_MINUTES <= value <= TIME_LIMIT_MAX_MINUTES):
-            return  # still typing, or out of range: the box's own hint explains the range
-        on_change(float(value))
+    A value outside a box's range is ignored (the box's own hint says what is allowed), and a valid one is applied to
+    the settings at once and saved.
+    """
+
+    def box(
+        label: str,
+        value: float,
+        *,
+        low: int,
+        high: int,
+        step: int,
+        marker: str,
+        apply: Callable[[int], None],
+        hint: str,
+    ) -> None:
+        def changed(event) -> None:
+            number = event.value
+            if number is None or not (low <= number <= high):
+                return  # still typing, or out of range
+            apply(int(number))
+            save()
+
+        ui.number(
+            label, value=round(value), min=low, max=high, step=step, format="%d", on_change=changed
+        ).props("outlined dense").classes("w-64").mark(marker)
+        ui.label(hint).classes("text-caption lr-muted")
 
     ui.separator().classes("q-mt-sm")
-    ui.number(
-        "Time limit for one run (minutes)",
-        value=round(minutes),
-        min=TIME_LIMIT_MIN_MINUTES,
-        max=TIME_LIMIT_MAX_MINUTES,
+    ui.label("Limits for one run").classes("text-weight-medium")
+    box(
+        "Time limit (minutes)",
+        limits.job_timeout_seconds / 60,
+        low=TIME_LIMIT_MIN_MINUTES,
+        high=TIME_LIMIT_MAX_MINUTES,
         step=10,
-        format="%d",
-        on_change=changed,
-    ).props("outlined dense").classes("w-64").mark("job-time-limit")
-    ui.label(
-        "A run that takes longer than this is stopped. It applies from the next run and is saved at once. "
-        f"Allowed: {TIME_LIMIT_MIN_MINUTES} to {TIME_LIMIT_MAX_MINUTES} minutes (a day). The default is 30."
-    ).classes("text-caption lr-muted")
+        marker="job-time-limit",
+        apply=lambda minutes: setattr(limits, "job_timeout_seconds", minutes * 60.0),
+        hint="A run that takes longer than this is stopped. "
+        f"Allowed: {TIME_LIMIT_MIN_MINUTES} to {TIME_LIMIT_MAX_MINUTES} minutes (a day). The default is 30.",
+    )
+    box(
+        "Most tool rounds",
+        limits.max_tool_rounds,
+        low=ROUNDS_MIN,
+        high=ROUNDS_MAX,
+        step=10,
+        marker="job-max-rounds",
+        apply=lambda rounds: setattr(limits, "max_tool_rounds", rounds),
+        hint="Each time the model uses tools and then carries on is one round. A run that reaches this many stops and "
+        f"says so. Allowed: {ROUNDS_MIN} to {ROUNDS_MAX}. The default is 100.",
+    )
+    box(
+        "Longest reply (tokens)",
+        limits.max_output_tokens,
+        low=REPLY_MIN,
+        high=REPLY_MAX,
+        step=4096,
+        marker="job-max-reply",
+        apply=lambda tokens: setattr(limits, "max_output_tokens", tokens),
+        hint="The most the model may write in one go, counting its thinking too. A reply that reaches it is cut off, and "
+        "the run is marked 'cut short'. A model that thinks a lot needs a bigger number, and a longer reply takes "
+        f"longer to write. Allowed: {REPLY_MIN:,} to {REPLY_MAX:,}. The default is 32,768.",
+    )
+    ui.label("Changes apply from the next run and are saved at once.").classes(
+        "text-caption lr-muted"
+    )
 
 
 async def edit_job(
