@@ -315,3 +315,47 @@ async def test_the_job_forms_buttons_are_outside_the_part_that_scrolls(user: Use
         assert len(scrolling) == 1 and "lr-form-body" in scrolling[0].classes
     finally:
         set_context(None)
+
+
+def test_a_jobs_model_is_kept_in_the_list_even_when_lemonade_no_longer_has_it():
+    from lemonrind.webui.scheduler_dialog import model_choices
+
+    listed = model_choices(["Qwen3-8B-GGUF"], "Qwen3-8B-GGUF")
+    assert list(listed) == ["", "Qwen3-8B-GGUF"]  # still listed: nothing added
+
+    gone = model_choices(["Qwen3-8B-GGUF"], "Old-Model-GGUF")
+    assert gone["Old-Model-GGUF"] == "Old-Model-GGUF (not listed by Lemonade now)"
+    assert "Qwen3-8B-GGUF" in gone and gone[""] == "(whatever model is selected)"
+
+    assert list(model_choices([], "")) == [
+        ""
+    ]  # no model chosen and none listed: just the blank choice
+    assert (
+        "(not listed" in model_choices([], "Anything")["Anything"]
+    )  # Lemonade unreachable: still editable
+
+
+async def test_a_job_whose_model_has_been_removed_can_still_be_opened_and_saved(
+    user: User, tmp_path: Path
+):
+    context = make_context(tmp_path, FakeLemonade())
+    module = scheduler(context.modules)  # type: ignore[arg-type]
+    module.add_job("Digest", "0 9 * * 1", "Summarise", model="Removed-Model-GGUF")
+    set_context(context)
+    register_pages()
+    try:
+        await user.open("/")
+        await open_section(user, "scheduler")
+        user.find(marker="job-edit").click()
+
+        await user.should_see(
+            marker="job-save"
+        )  # the form opened (it used to fail with "Invalid value")
+        user.find(marker="job-save").click()
+        for _ in range(40):
+            await asyncio.sleep(0.05)
+            if module.repo.find("Digest") is not None:
+                break
+        assert module.repo.find("Digest").model == "Removed-Model-GGUF"  # type: ignore[union-attr]
+    finally:
+        set_context(None)

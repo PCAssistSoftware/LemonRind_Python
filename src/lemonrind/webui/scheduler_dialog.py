@@ -112,7 +112,7 @@ def build_scheduler(
                     ).tooltip("Open the last run's chat").mark("job-open")
                 ui.button(icon="edit", on_click=lambda j=job: edit(j)).props(
                     "flat dense round"
-                ).tooltip("Edit")
+                ).tooltip("Edit").mark("job-edit")
                 ui.button(icon="delete", on_click=lambda j=job: remove(j)).props(
                     "flat dense round color=negative"
                 ).tooltip("Delete")
@@ -180,6 +180,20 @@ def build_scheduler(
             _time_limit_box(time_limit_minutes, on_time_limit)
 
     ui.timer(1.5, poll)
+
+
+def model_choices(chat_models: list[str], current: str) -> dict[str, str]:
+    """The models to pick from in a job's form, always including the one the job already uses.
+
+    A job keeps the model's name it was saved with. If that model has since been removed or renamed on Lemonade it is
+    no longer in the list, and a drop-down cannot hold a value that is not among its options (it raises an error, which
+    used to make such a job impossible to open). So the saved name is added back, marked, so the job can still be edited
+    and the person can see why it needs another model.
+    """
+    options = {"": "(whatever model is selected)", **{name: name for name in chat_models}}
+    if current and current not in options:
+        options[current] = f"{current} (not listed by Lemonade now)"
+    return options
 
 
 TIME_LIMIT_MIN_MINUTES = 1
@@ -334,7 +348,7 @@ async def edit_job(
                 .mark("job-prompt")
             )
             model = ui.select(
-                {"": "(whatever model is selected)", **{m: m for m in chat_models}},
+                model_choices(chat_models, job.model if job else ""),
                 value=job.model if job else "",
                 label="Model",
             ).classes("w-full")

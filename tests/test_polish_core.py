@@ -320,7 +320,8 @@ def test_listening_on_the_network_without_a_password_is_warned_about(
     root = logging.getLogger()
     before = list(root.handlers)
 
-    web_app.main(["--data-dir", str(tmp_path), "--host", "0.0.0.0"])
+    # a port of its own: the real app may be running on 8080 right now, and a busy port now stops start-up
+    web_app.main(["--data-dir", str(tmp_path), "--host", "0.0.0.0", "--port", "9125"])
 
     for handler in list(root.handlers):
         if handler not in before:
@@ -341,7 +342,9 @@ def test_ctrl_c_stops_the_web_app_quietly(tmp_path: Path, monkeypatch, capsys):
     root = logging.getLogger()
     before = list(root.handlers)
 
-    web_app.main(["--data-dir", str(tmp_path), "--no-browser"])  # must return, not raise
+    web_app.main(
+        ["--data-dir", str(tmp_path), "--no-browser", "--port", "9126"]
+    )  # must return, not raise
 
     for handler in list(root.handlers):
         if handler not in before:

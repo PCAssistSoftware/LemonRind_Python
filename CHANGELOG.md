@@ -2,6 +2,12 @@
 
 What changed in each version of the Python edition, newest first. Each entry is dated, and a change is added here when it is pushed.
 
+## 0.2.5 - 09-10-2026
+
+### Fixed
+
+- **A scheduled job whose model has been removed from Lemonade can be edited again.** Opening it failed with "Invalid value" because the saved model was no longer in the list of models. The form now keeps the saved model in its list, marked "not listed by Lemonade now", so you can open the job, choose another model or leave it, and save.
+
 ## 0.2.4 - 08-10-2026
 
 ### Fixed
