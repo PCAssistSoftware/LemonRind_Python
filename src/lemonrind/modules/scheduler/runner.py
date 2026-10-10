@@ -32,8 +32,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
@@ -64,6 +65,7 @@ class JobOutcome:
     status: str  # "ok", "failed", "timed out"
     session_id: str | None  # the chat holding the result (or the explanation of the failure)
     message: str = ""  # a one-line summary for listings and notices
+    seconds: float | None = None  # how long the run took
 
 
 async def _allow_everything(call: Any) -> bool:
@@ -113,15 +115,27 @@ class JobRunner:
         If the run is cancelled (the Stop button, or the app closing) a note says so in the chat and a ``stopped``
         outcome is returned instead of the cancellation being raised again: the caller that cancelled it already knows.
         """
+        from lemonrind.chats import format_duration  # here, not at the top: see the note above
+
         session = self._chats.create_session(job.name)
         self._chats.add_tag(session.id, SCHEDULED_TAG)
         self._chats.add_tag(session.id, RUNNING_TAG)
         self.live.start(session.id, job.prompt, job.name)
+        started = time.monotonic()
         try:
-            return await self._execute(job, session)
-        except asyncio.CancelledError:
-            self._add_note(job, session, "This run was stopped before it finished.")
-            return JobOutcome("stopped", session.id, "Stopped.")
+            try:
+                outcome = await self._execute(job, session)
+            except asyncio.CancelledError:
+                self._add_note(job, session, "This run was stopped before it finished.")
+                outcome = JobOutcome("stopped", session.id, "Stopped.")
+            seconds = time.monotonic() - started
+            ended = self._clock().astimezone()
+            self._chats.add_message(
+                session.id,
+                "assistant",
+                f"This run ended at {ended:%H:%M} on {ended:%d-%m-%Y} and took {format_duration(seconds)}.",
+            )
+            return replace(outcome, seconds=seconds)
         finally:
             self._chats.remove_tag(session.id, RUNNING_TAG)
             self.live.end(

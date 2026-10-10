@@ -17,7 +17,7 @@ from lemonrind.webui.context import set_context
 from lemonrind.webui.page import register_pages
 from tests.conftest import elements
 from tests.test_scheduler import FakeLemonade as SchedulerLemonade
-from tests.test_scheduler import a_job, make_repo, make_runner, reply
+from tests.test_scheduler import a_job, make_repo, make_runner, reply, run_messages
 from tests.test_settings_sections import open_section, settle
 from tests.test_webui import FakeLemonade, make_context, send
 
@@ -42,7 +42,7 @@ async def test_a_run_whose_reply_hit_the_output_limit_is_marked_cut_short_with_a
     outcome = await runner.run(a_job(make_repo()))
 
     assert outcome.status == "cut short" and outcome.session_id is not None
-    last = chats.list_messages(outcome.session_id)[-1]
+    last = run_messages(chats, outcome.session_id)[-1]
     assert last.role == "assistant"
     assert (
         f"cut off at the output limit ({settings.modules.scheduler.max_output_tokens:,} tokens"
@@ -67,7 +67,7 @@ async def test_a_cut_off_reply_is_continued_automatically_and_the_run_is_ok():
     outcome = await runner.run(a_job(make_repo()))
 
     assert outcome.status == "ok" and outcome.session_id is not None
-    saved = [(m.role, m.content) for m in chats.list_messages(outcome.session_id)]
+    saved = [(m.role, m.content) for m in run_messages(chats, outcome.session_id)]
     assert saved[:4] == [
         ("user", "Summarise the week"),
         ("assistant", "<table><tr><td>first half"),
@@ -93,7 +93,7 @@ async def test_continuing_stops_after_the_set_number_of_tries_and_says_so():
     assert (
         outcome.status == "cut short" and len(client.requests) == 3
     )  # the first try and two continues
-    last = chats.list_messages(outcome.session_id or "")[-1].content
+    last = run_messages(chats, outcome.session_id or "")[-1].content
     assert "even after 2 automatic continues" in last
 
 
@@ -117,7 +117,7 @@ async def test_a_continue_that_only_thinks_leaves_the_run_cut_short_not_failed()
     assert (
         outcome.status == "cut short"
     )  # the report so far is kept, and the run says it is incomplete
-    assert chats.list_messages(outcome.session_id or "")[1].content == "the report so far"
+    assert run_messages(chats, outcome.session_id or "")[1].content == "the report so far"
 
 
 def test_the_default_longest_reply_leaves_room_for_thinking_and_a_report():

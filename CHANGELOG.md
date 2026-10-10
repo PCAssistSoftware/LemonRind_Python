@@ -2,6 +2,12 @@
 
 What changed in each version of the Python edition, newest first. Each entry is dated, and a change is added here when it is pushed.
 
+## 0.2.12 - 10-10-2026
+
+### Added
+
+- **A scheduled run now says how long it took.** Every run's chat ends with a line such as "This run ended at 14:32 on 10-10-2026 and took 12 min 40 s." (also for a failed or stopped run), the notice that appears when a job finishes includes the time taken, and the job list shows it beside the last run ("Last run: ok  Sat 10 Oct 14:32, took 12 min 40 s"). The time is kept with the job, so it is there after a restart; runs from before this version show no time. Ordinary chats are unchanged.
+
 ## 0.2.11 - 10-10-2026
 
 ### Added

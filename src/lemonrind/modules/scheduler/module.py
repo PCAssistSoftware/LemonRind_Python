@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections.abc import Callable
 from datetime import UTC, datetime
 
@@ -232,6 +233,7 @@ class SchedulerModule(Module):
     async def _run(self, job: ScheduledJob, *, scheduled: bool) -> JobOutcome:
         async with self._run_lock:
             self.repo.mark_running(job.id)
+            started = time.monotonic()
             self.runs_started += 1
             outcome = JobOutcome("interrupted", None, "The app stopped while this job was running.")
             # The run is its own task so the Stop button can cancel just that, not whatever started it.
@@ -257,6 +259,9 @@ class SchedulerModule(Module):
                     session_id=outcome.session_id,
                     next_run_at=self._next_time(job) if scheduled else None,
                     update_schedule=scheduled,
+                    seconds=outcome.seconds
+                    if outcome.seconds is not None
+                    else time.monotonic() - started,
                 )
                 self.last_outcome = (job.name, outcome)
                 self.runs_finished += 1

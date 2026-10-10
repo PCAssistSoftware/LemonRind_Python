@@ -710,6 +710,14 @@ def reply(text: str) -> list[ChatEvent]:
     return [TextDelta(text), Finished(RequestStats(prompt_tokens=10, output_tokens=5), "stop")]
 
 
+def run_messages(chats, session_id: str):
+    """The messages of a run's chat, without the closing line that says when it ended and how long it took."""
+    messages = chats.list_messages(session_id)
+    if messages and messages[-1].content.startswith("This run ended at "):
+        messages = messages[:-1]
+    return messages
+
+
 def make_runner(client, registry=None, settings=None):
     settings = settings or Settings()
     chats = ChatRepository(Database(":memory:"))
@@ -734,7 +742,7 @@ async def test_a_successful_run_leaves_a_tagged_chat_named_after_the_job():
     assert outcome.status == "ok" and outcome.session_id is not None
     session = chats.get_session(outcome.session_id)
     assert session is not None and session.title == "Weekly digest" and "scheduled" in session.tags
-    assert [(m.role, m.content) for m in chats.list_messages(session.id)] == [
+    assert [(m.role, m.content) for m in run_messages(chats, session.id)] == [
         ("user", "Summarise the week"),
         ("assistant", "Here is your digest."),
     ]
@@ -757,7 +765,7 @@ async def test_a_job_can_name_its_own_model_but_an_unknown_one_fails_clearly():
     assert outcome.status == "failed"
     session = chats.get_session(outcome.session_id)  # type: ignore[arg-type]
     assert session is not None and {"scheduled", "failed"} <= set(session.tags)
-    assert "not downloaded" in chats.list_messages(session.id)[-1].content
+    assert "not downloaded" in run_messages(chats, session.id)[-1].content
 
 
 async def test_a_lemonade_error_becomes_a_chat_with_the_prompt_the_reason_and_a_hint():
@@ -771,7 +779,7 @@ async def test_a_lemonade_error_becomes_a_chat_with_the_prompt_the_reason_and_a_
     outcome = await runner.run(a_job(make_repo()))
 
     assert outcome.status == "failed"
-    messages = chats.list_messages(outcome.session_id)  # type: ignore[arg-type]
+    messages = run_messages(chats, outcome.session_id)  # type: ignore[arg-type]
     assert messages[0].role == "user" and messages[0].content == "Summarise the week"
     assert (
         "This scheduled job failed" in messages[1].content
@@ -787,7 +795,7 @@ async def test_a_model_that_answers_nothing_is_retried_once_then_reported():
     outcome = await runner.run(a_job(make_repo()))
 
     assert outcome.status == "failed" and len(client.requests) == 2
-    assert "no answer" in chats.list_messages(outcome.session_id)[-1].content  # type: ignore[arg-type]
+    assert "no answer" in run_messages(chats, outcome.session_id)[-1].content  # type: ignore[arg-type]
 
 
 async def test_an_empty_first_answer_is_retried_and_the_second_one_is_used():
@@ -797,7 +805,7 @@ async def test_an_empty_first_answer_is_retried_and_the_second_one_is_used():
     outcome = await runner.run(a_job(make_repo()))
 
     assert outcome.status == "ok" and len(client.requests) == 2
-    assert chats.list_messages(outcome.session_id)[-1].content == "Second time lucky."  # type: ignore[arg-type]
+    assert run_messages(chats, outcome.session_id)[-1].content == "Second time lucky."  # type: ignore[arg-type]
 
 
 async def test_a_job_that_runs_too_long_is_stopped_and_explained():
@@ -814,7 +822,7 @@ async def test_a_job_that_runs_too_long_is_stopped_and_explained():
     outcome = await runner.run(a_job(make_repo()))
 
     assert outcome.status == "timed out"
-    messages = chats.list_messages(outcome.session_id)  # type: ignore[arg-type]
+    messages = run_messages(chats, outcome.session_id)  # type: ignore[arg-type]
     assert "time limit" in messages[-1].content  # the explanation is added to the chat
     assert "Starting to write" in " ".join(
         m.content for m in messages
@@ -876,7 +884,7 @@ async def test_reaching_the_round_limit_adds_a_warning_to_the_chat():
     outcome = await runner.run(a_job(make_repo(), allow_unattended_tools=True))
 
     assert outcome.status == "ok"
-    last = chats.list_messages(outcome.session_id)[-1]  # type: ignore[arg-type]
+    last = run_messages(chats, outcome.session_id)[-1]  # type: ignore[arg-type]
     assert "maximum of 2 tool rounds" in last.content
 
 
@@ -974,7 +982,7 @@ async def test_the_chat_is_in_the_list_while_the_job_runs_and_the_running_tag_go
     (after,) = chats.list_sessions()  # the same chat, not a second one
     assert after.id == during.id == outcome.session_id
     assert "running" not in after.tags and "scheduled" in after.tags
-    assert [m.role for m in chats.list_messages(after.id)] == ["user", "assistant"]
+    assert [m.role for m in run_messages(chats, after.id)] == ["user", "assistant"]
 
 
 async def test_stopping_a_run_leaves_one_chat_saying_so_and_clears_the_running_tag():
@@ -989,7 +997,7 @@ async def test_stopping_a_run_leaves_one_chat_saying_so_and_clears_the_running_t
     assert outcome.status == "stopped"
     (session,) = chats.list_sessions()
     assert "running" not in session.tags and "failed" not in session.tags
-    assert [(m.role, m.content) for m in chats.list_messages(session.id)] == [
+    assert [(m.role, m.content) for m in run_messages(chats, session.id)] == [
         ("user", "Summarise the week"),
         ("assistant", "This run was stopped before it finished."),
     ]

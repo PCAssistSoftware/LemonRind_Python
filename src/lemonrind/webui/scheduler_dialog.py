@@ -21,6 +21,7 @@ from datetime import UTC, datetime
 
 from nicegui import ui
 
+from lemonrind.chats import format_duration
 from lemonrind.config import SchedulerSettings
 from lemonrind.modules.scheduler import CronError, DuplicateJobError, ScheduledJob, SchedulerModule
 from lemonrind.modules.scheduler.cron import (
@@ -127,7 +128,12 @@ def build_scheduler(
                     if job.last_run_at
                     else ""
                 )
-                ui.label(f"Last run: {job.last_status}  {when}").classes(
+                took = (
+                    f", took {format_duration(job.last_duration_seconds)}"
+                    if job.last_duration_seconds is not None
+                    else ""
+                )
+                ui.label(f"Last run: {job.last_status}  {when}{took}").classes(
                     f"text-caption text-{STATUS_COLOURS.get(job.last_status, 'grey')}"
                 )
             if job.allow_unattended_tools:

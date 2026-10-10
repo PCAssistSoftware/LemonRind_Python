@@ -45,6 +45,7 @@ class ScheduledJob:
     last_session_id: str | None
     running_since: datetime | None
     created_at: datetime
+    last_duration_seconds: float | None = None  # how long the last run took
 
 
 def now_utc() -> datetime:
@@ -61,7 +62,7 @@ def _iso(moment: datetime | None) -> str | None:
 
 _SELECT = (
     "SELECT id, name, cron, prompt, enabled, model, allow_unattended_tools, last_run_at, next_run_at,"
-    " last_status, last_session_id, running_since, created_at FROM scheduled_jobs"
+    " last_status, last_session_id, running_since, created_at, last_duration_seconds FROM scheduled_jobs"
 )
 
 
@@ -80,6 +81,7 @@ def _from_row(row: sqlite3.Row) -> ScheduledJob:
         last_session_id=row["last_session_id"],
         running_since=_when(row["running_since"]),
         created_at=datetime.fromisoformat(row["created_at"]),
+        last_duration_seconds=row["last_duration_seconds"],
     )
 
 
@@ -189,20 +191,30 @@ class SchedulerRepository:
         session_id: str | None,
         next_run_at: datetime | None,
         update_schedule: bool = True,
+        seconds: float | None = None,
     ) -> None:
-        """Note how a run ended and (unless it was a manual "run now") when the job is next due."""
+        """Note how a run ended, how long it took, and (unless it was a manual "run now") when the job is next due."""
         with self._db.transaction() as conn:
             if update_schedule:
                 conn.execute(
                     "UPDATE scheduled_jobs SET running_since = NULL, last_run_at = ?, last_status = ?,"
-                    " last_session_id = COALESCE(?, last_session_id), next_run_at = ? WHERE id = ?",
-                    (self._clock().isoformat(), status, session_id, _iso(next_run_at), job_id),
+                    " last_session_id = COALESCE(?, last_session_id), next_run_at = ?,"
+                    " last_duration_seconds = ? WHERE id = ?",
+                    (
+                        self._clock().isoformat(),
+                        status,
+                        session_id,
+                        _iso(next_run_at),
+                        seconds,
+                        job_id,
+                    ),
                 )
             else:
                 conn.execute(
                     "UPDATE scheduled_jobs SET running_since = NULL, last_run_at = ?, last_status = ?,"
-                    " last_session_id = COALESCE(?, last_session_id) WHERE id = ?",
-                    (self._clock().isoformat(), status, session_id, job_id),
+                    " last_session_id = COALESCE(?, last_session_id), last_duration_seconds = ?"
+                    " WHERE id = ?",
+                    (self._clock().isoformat(), status, session_id, seconds, job_id),
                 )
 
     def fail_interrupted(self) -> int:

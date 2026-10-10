@@ -117,6 +117,18 @@ def parse_snippet(raw: str) -> Parts:
     return parts
 
 
+def format_duration(seconds: float) -> str:
+    """How long something took, in words a person would say: ``45 s``, ``12 min 40 s``, ``2 h 5 min``."""
+    whole = max(0, round(seconds))
+    hours, rest = divmod(whole, 3600)
+    minutes, secs = divmod(rest, 60)
+    if hours:
+        return f"{hours} h {minutes} min"
+    if minutes:
+        return f"{minutes} min {secs} s"
+    return f"{secs} s"
+
+
 def relative_time(then: datetime, now: datetime | None = None, tz: tzinfo | None = None) -> str:
     """A short "how long ago": ``now``, ``5m``, ``3h``, ``Yesterday``, ``4d``, then a date like ``2 Oct``.
 

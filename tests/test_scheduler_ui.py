@@ -203,6 +203,7 @@ async def test_run_now_from_the_web_screen_makes_a_tagged_chat(user: User, tmp_p
         (session,) = [s for s in context.repo.list_sessions() if "scheduled" in s.tags]
         assert session.title == "Digest"
         await user.should_see("Last run: ok", retries=60)  # the list redraws on a 1.5 second timer
+        await user.should_see(", took ")  # and how long that run took
     finally:
         set_context(None)
 

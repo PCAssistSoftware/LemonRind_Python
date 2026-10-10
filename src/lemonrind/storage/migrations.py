@@ -202,6 +202,10 @@ MIGRATIONS: list[str] = [
     ALTER TABLE messages ADD COLUMN model TEXT;
     CREATE INDEX ix_messages_usage ON messages(created_at) WHERE stats_json IS NOT NULL;
     """,
+    # 11: how long a scheduled job's last run took, in seconds (NULL until it has run since this existed)
+    """
+    ALTER TABLE scheduled_jobs ADD COLUMN last_duration_seconds REAL;
+    """,
 ]
 
 

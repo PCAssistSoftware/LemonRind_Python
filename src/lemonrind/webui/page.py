@@ -44,6 +44,7 @@ from lemonrind.chats import (
     ToolFinished,
     ToolStarted,
     build_system_prompt,
+    format_duration,
 )
 from lemonrind.lemonade.client import LemonadeError
 from lemonrind.lemonade.events import RequestStats
@@ -1126,8 +1127,11 @@ class ChatPage:
                 self._open_chat(
                     finished
                 )  # you were looking at the empty chat: show what it holds now
+            took = (
+                f" (took {format_duration(outcome.seconds)})" if outcome.seconds is not None else ""
+            )
             ui.notify(
-                f"Scheduled job '{name}': {outcome.status}",
+                f"Scheduled job '{name}': {outcome.status}{took}",
                 type="positive" if outcome.status == "ok" else "warning",
             )
 
