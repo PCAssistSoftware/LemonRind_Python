@@ -1,6 +1,7 @@
 """Saved conversations: storage, search and the small helpers around them."""
 
 from lemonrind.chats.conversation import (
+    CONTINUE_PROMPT,
     ChatStreamer,
     CompactionFinished,
     CompactionStarted,
@@ -20,6 +21,7 @@ from lemonrind.chats.repository import ChatNotFoundError, ChatRepository
 from lemonrind.chats.text import DEFAULT_TITLE, auto_title, build_fts_query, relative_time
 
 __all__ = [
+    "CONTINUE_PROMPT",
     "DEFAULT_TITLE",
     "ChatNotFoundError",
     "ChatRepository",

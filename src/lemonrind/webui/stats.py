@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
@@ -66,13 +67,33 @@ def group_chips(chips: Sequence[ToolChip]) -> list[ChipGroup]:
     )  # stable: outcomes stay in the order met
 
 
+TIP_ERROR_CHARS = 140  # one error's share of a tooltip: errors can run to thousands of characters
+TIP_ERRORS_SHOWN = 3
+
+
+def short_error(text: str) -> str:
+    """An error text boiled down for a tooltip: one line, no web-address query strings, cut to a readable length.
+
+    Errors from web tools often repeat a long signed address several times; the query part (everything after the
+    ``?``) is what makes them unreadable, and it is never the useful part. The full text stays in the tool's panel
+    in the chat.
+    """
+    plain = re.sub(r"\?[^\s'\"]+", "?...", " ".join(text.split()))
+    if len(plain) > TIP_ERROR_CHARS:
+        plain = plain[: TIP_ERROR_CHARS - 3].rstrip() + "..."
+    return plain
+
+
 def _chip_tooltip(group: ChipGroup) -> str:
-    """What you see on hover: the real error text for failures (up to three kinds), else how the calls ended."""
+    """What you see on hover: short versions of the errors for failures (up to three kinds), else how calls ended."""
     title = CHIP_TITLES.get(group.state, "")
     if group.details:
-        more = len(group.details) - 3
-        shown = "\n".join(group.details[:3])
-        return shown + (f"\n(and {more} more kinds of error)" if more > 0 else "")
+        kinds = list(dict.fromkeys(short_error(d) for d in group.details))
+        lines = kinds[:TIP_ERRORS_SHOWN]
+        if len(kinds) > TIP_ERRORS_SHOWN:
+            lines.append(f"(and {len(kinds) - TIP_ERRORS_SHOWN} more kinds of error)")
+        lines.append("The full text is in the tool's panel in the chat.")
+        return "\n".join(lines)
     return f"{title} ({group.count} calls)" if group.count > 1 else title
 
 
@@ -179,7 +200,9 @@ class StatsPanel:
                         if group.count > 1:
                             ui.label(f"x {group.count}").classes("text-weight-bold q-ml-xs")
                     # The real error is what you see on hover, not just "failed".
-                    ui.tooltip(_chip_tooltip(group))
+                    ui.tooltip(_chip_tooltip(group)).style(
+                        "max-width: 340px; white-space: pre-line"
+                    )
 
     def _render_modules(self) -> None:
         for module in self._modules():

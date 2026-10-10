@@ -138,7 +138,7 @@ class JobRunner:
     async def _execute(self, job: ScheduledJob, session: ChatSession) -> JobOutcome:
         # Imported here, not at the top of the file: the chat package imports the modules package (for the
         # tool types), and the modules package imports this file, so a top-level import would be circular.
-        from lemonrind.chats import Conversation
+        from lemonrind.chats import CONTINUE_PROMPT, Conversation
 
         config = self._settings.modules.scheduler
         conversation: Conversation | None = None
@@ -166,12 +166,28 @@ class JobRunner:
                 )
 
             reply = None
+            continues = 0
             async with asyncio.timeout(config.job_timeout_seconds):
                 for _ in range(ATTEMPTS):
                     live = self.live.get(session.id)
                     reply = await conversation.send(job.prompt, live.publish if live else None)
                     if reply.text:
                         break
+                # A reply that stopped at the output limit is carried on, so a long report arrives whole.
+                while (
+                    reply is not None
+                    and reply.text
+                    and reply.finish_reason == "length"
+                    and continues < config.max_continuations
+                ):
+                    continues += 1
+                    live = self.live.get(session.id)
+                    follow = await conversation.send(
+                        CONTINUE_PROMPT, live.publish if live else None
+                    )
+                    if not follow.text:  # it used the whole limit thinking again: nothing to add
+                        break
+                    reply = follow
             await conversation.drain(60)  # let background learning (memory) finish
             if reply is None or not reply.text:
                 return self._failure(job, session, "The model produced no answer.")
@@ -180,14 +196,26 @@ class JobRunner:
             if reply.finish_reason == "length":
                 # The model hit the limit on one reply, so what it wrote stops part way (a report cut off in the
                 # middle of a table, say). Calling that "ok" would hide it.
+                tried = (
+                    f" even after {continues} automatic continue{'s' if continues != 1 else ''}"
+                    if continues
+                    else ""
+                )
                 self._chats.add_message(
                     session.id,
                     "assistant",
                     f"Warning: the model's reply was cut off at the output limit ({config.max_output_tokens:,} tokens, "
-                    "which includes its thinking), so it is probably incomplete. Raise 'Longest reply' in "
+                    f"which includes its thinking){tried}, so it is probably incomplete. Raise 'Longest reply' in "
                     "Settings > Scheduler, use a model that thinks less, or ask for a shorter report.",
                 )
                 return JobOutcome("cut short", session.id, "the reply reached the output limit")
+            if continues:
+                self._chats.add_message(
+                    session.id,
+                    "assistant",
+                    f"Note: the reply reached the output limit and was continued automatically {continues} "
+                    f"time{'s' if continues != 1 else ''}, so it arrives in {continues + 1} parts.",
+                )
             if len(reply.round_stats) >= config.max_tool_rounds:
                 self._chats.add_message(
                     session.id,

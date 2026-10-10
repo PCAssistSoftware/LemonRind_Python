@@ -205,6 +205,7 @@ TIME_LIMIT_MAX_MINUTES = (
 )  # a day: more than that is far more likely a typing slip than a plan
 ROUNDS_MIN, ROUNDS_MAX = 1, 500
 REPLY_MIN, REPLY_MAX = 256, 131_072
+CONTINUES_MIN, CONTINUES_MAX = 0, 10
 
 
 def _limit_boxes(limits: SchedulerSettings, save: Callable[[], None]) -> None:
@@ -272,6 +273,17 @@ def _limit_boxes(limits: SchedulerSettings, save: Callable[[], None]) -> None:
         hint="The most the model may write in one go, counting its thinking too. A reply that reaches it is cut off, and "
         "the run is marked 'cut short'. A model that thinks a lot needs a bigger number, and a longer reply takes "
         f"longer to write. Allowed: {REPLY_MIN:,} to {REPLY_MAX:,}. The default is 32,768.",
+    )
+    box(
+        "Automatic continues",
+        limits.max_continuations,
+        low=CONTINUES_MIN,
+        high=CONTINUES_MAX,
+        step=1,
+        marker="job-max-continues",
+        apply=lambda times: setattr(limits, "max_continuations", times),
+        hint="When a reply is cut off at the longest reply, the run asks the model to carry on from where it stopped, "
+        f"up to this many times. 0 turns it off. Allowed: {CONTINUES_MIN} to {CONTINUES_MAX}. The default is 2.",
     )
     ui.label("Changes apply from the next run and are saved at once.").classes(
         "text-caption lr-muted"

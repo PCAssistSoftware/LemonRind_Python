@@ -12,7 +12,7 @@ from lemonrind.lemonade.events import RequestStats
 from lemonrind.webui.bubbles import ToolChip
 from lemonrind.webui.context import AppContext, set_context
 from lemonrind.webui.page import register_pages
-from lemonrind.webui.stats import group_chips
+from lemonrind.webui.stats import TIP_ERROR_CHARS, _chip_tooltip, group_chips, short_error
 from tests.conftest import elements
 from tests.test_webui import FakeLemonade, make_context, send
 
@@ -49,6 +49,40 @@ def test_done_and_failed_calls_of_the_same_tool_stay_separate_and_failures_keep_
 
 def test_no_calls_gives_no_groups():
     assert group_chips([]) == []
+
+
+SIGNED = (
+    "Tavily could not extract 'https://example.com/a?Expires=1816928141&OSSAccessKeyId=LTAI5tKoG9A3DkwGD635QVZr"
+    "&Signature=%2BhIF%2bQA9%2FGIFOu%2F5%2FhZJIFRF6xk%3D': Failed to fetch url"
+)
+
+
+def test_a_long_error_is_boiled_down_for_the_tooltip():
+    short = short_error(SIGNED * 5)
+
+    assert len(short) <= TIP_ERROR_CHARS
+    assert (
+        "OSSAccessKeyId" not in short and "?..." in short
+    )  # the signed query string is not the useful part
+    assert short_error("HTTP 404\n  not found") == "HTTP 404 not found"  # one line
+
+
+def test_the_tooltip_shows_a_few_short_errors_and_says_where_the_rest_is():
+    group = group_chips(
+        [chip("read_webpage", "failed", f"{SIGNED} #{i}") for i in range(1)]
+        + [chip("read_webpage", "failed", f"error {i}") for i in range(6)]
+    )[0]
+
+    lines = _chip_tooltip(group).split("\n")
+
+    assert len(lines) == 5  # three errors, "and N more", and where to find the full text
+    assert lines[-2] == "(and 4 more kinds of error)" and "tool's panel" in lines[-1]
+    assert all(len(line) <= TIP_ERROR_CHARS for line in lines[:3])
+
+
+def test_the_tooltip_of_a_good_group_says_how_many_succeeded():
+    assert _chip_tooltip(group_chips([chip("a"), chip("a")])[0]) == "Succeeded (2 calls)"
+    assert _chip_tooltip(group_chips([chip("a")])[0]) == "Succeeded"
 
 
 class ManyCallsLemonade(FakeLemonade):

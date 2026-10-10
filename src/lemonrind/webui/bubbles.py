@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import re
 import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -264,6 +265,12 @@ class AssistantBubble:
                 )  # Save / Copy buttons for drawn pictures
                 self._note = ui.label().classes("text-caption lr-warn")
                 self._note.set_visibility(False)
+                self._continue_button = (
+                    ui.button("Continue", icon="play_arrow")
+                    .props("outline dense no-caps size=sm")
+                    .mark("continue-reply")
+                )
+                self._continue_button.set_visibility(False)
 
                 with ui.row().classes("items-center gap-1 w-full") as self._footer:
                     self._stats_label = ui.label().classes("text-caption lr-muted")
@@ -314,8 +321,14 @@ class AssistantBubble:
             self._paint()
             ui.run_javascript("lrScrollDown(false)")
 
-    def finish(self, reply: Reply) -> None:
-        """The reply is complete: paint the final state, show the stats."""
+    def finish(
+        self, reply: Reply, on_continue: Callable[[], Awaitable[None]] | None = None
+    ) -> None:
+        """The reply is complete: paint the final state, show the stats.
+
+        A reply that stopped at the output limit gets a Continue button when ``on_continue`` is given; pressing it calls
+        ``on_continue`` (which asks the model to carry on).
+        """
         self._end_thinking()
         self._progress.set_visibility(False)
         self._paint()
@@ -331,7 +344,14 @@ class AssistantBubble:
             self._note_text(
                 "The reply reached the output limit (thinking counts towards it), so it may be incomplete."
             )
+            if on_continue is not None:
+                self._continue_button.on_click(on_continue)
+                self._continue_button.set_visibility(True)
         ui.run_javascript("lrScrollDown(false)")
+
+    def hide_continue(self) -> None:
+        """Take the Continue button away (it only makes sense on the newest reply)."""
+        self._continue_button.set_visibility(False)
 
     def repaint_soon(self, delay: float = 0.3) -> None:
         """Make sure the text that has arrived gets drawn within ``delay`` seconds, even if no more events come.

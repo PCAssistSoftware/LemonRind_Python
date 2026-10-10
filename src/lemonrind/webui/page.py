@@ -36,6 +36,7 @@ from lemonrind.attachments import (
     prepare,
 )
 from lemonrind.chats import (
+    CONTINUE_PROMPT,
     ChatSession,
     Conversation,
     Reply,
@@ -135,6 +136,9 @@ class ChatPage:
             set()
         )  # model problems already shown on this page: each is said once
         self._task: asyncio.Task | None = None
+        self._continuable: AssistantBubble | None = (
+            None  # the newest reply that has a Continue button
+        )
         self._last_day: date | None = None
         self._ignore_model_change = False
         # An image model picked in the model list: what you type is then drawn, not chatted about. The chat model
@@ -851,8 +855,18 @@ class ChatPage:
         self.input.value = ""
         await self._send(text, attachment)
 
+    async def _continue_reply(self, bubble: AssistantBubble) -> None:
+        """The Continue button on a reply that stopped at the output limit: ask the model to carry on."""
+        if self._busy:
+            return
+        bubble.hide_continue()
+        await self._send(CONTINUE_PROMPT)
+
     async def _send(self, text: str, attachment: Attachment | None = None) -> None:
         self._set_busy(True)
+        if self._continuable is not None and not self._continuable.root.is_deleted:
+            self._continuable.hide_continue()  # a newer message makes the old button stale
+        self._continuable = None
         thinking_open = self.context.settings.ui.thinking_open_by_default
         with self.messages:
             if not self.hint.is_deleted:
@@ -895,7 +909,9 @@ class ChatPage:
             bubble.show_error(f"Something went wrong: {error}")
             raise
         else:
-            bubble.finish(reply)
+            bubble.finish(reply, lambda: self._continue_reply(bubble))
+            if reply.text and reply.finish_reason == "length":
+                self._continuable = bubble
             for stats in reply.round_stats or (
                 reply.stats,
             ):  # one entry per request (tools: several)

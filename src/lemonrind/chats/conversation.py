@@ -140,6 +140,13 @@ class ContextProvider(Protocol):
     async def after_turn(self, user_text: str, reply_text: str, *, model: str) -> None: ...
 
 
+# What is sent to carry on a reply that stopped at the output limit (by the Continue button, or by a scheduled run).
+CONTINUE_PROMPT = (
+    "Your last reply was cut off at the length limit. Continue exactly from where it stopped, "
+    "without repeating what you already wrote."
+)
+
+
 @dataclass(frozen=True, slots=True)
 class Reply:
     """Everything one reply produced."""

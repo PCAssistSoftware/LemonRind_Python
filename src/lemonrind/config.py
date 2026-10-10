@@ -175,6 +175,9 @@ class SchedulerSettings(BaseModel):
     # Cap on one reply's length (tokens, and a model's thinking counts), so a runaway generation cannot eat the
     # whole time limit. A model that thinks at length and then writes a long report needs room for both.
     max_output_tokens: int = Field(default=32768, ge=256)
+    # When a reply stops at that limit with the report part written, the run asks the model to carry on from where it
+    # stopped, up to this many times (0 = never; the run is then marked "cut short").
+    max_continuations: int = Field(default=2, ge=0, le=10)
     # A job that was due while the app was closed runs once when the app starts, but only if it was missed by
     # less than this (APScheduler's misfire grace time; never less than a minute). A "Monday 9am" job should
     # not fire on Thursday evening just because the computer was off.

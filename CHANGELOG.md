@@ -2,6 +2,16 @@
 
 What changed in each version of the Python edition, newest first. Each entry is dated, and a change is added here when it is pushed.
 
+## 0.2.11 - 10-10-2026
+
+### Added
+
+- **A reply that is cut off at the output limit can be carried on.** In a scheduled run it happens by itself: the run asks the model to continue from exactly where it stopped, up to a set number of times (Settings > Scheduler > Automatic continues, 2 by default, 0 turns it off), so a long report arrives whole. The run's chat says it was continued and in how many parts. If it is still cut off after the last try the run is marked "cut short" as before. In a chat, a reply that was cut off now shows a **Continue** button that asks the model to carry on; it goes away once you use it or send another message.
+
+### Changed
+
+- **The hover text on a failed tool badge is short.** Errors from web tools can run to thousands of characters, mostly long signed addresses. The tooltip now shows up to three errors, each as one line of about 140 characters with the address query strings removed, in a narrower box, and points to the tool's panel in the chat for the full text.
+
 ## 0.2.10 - 10-10-2026
 
 ### Changed
