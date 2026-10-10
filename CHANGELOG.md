@@ -2,6 +2,12 @@
 
 What changed in each version of the Python edition, newest first. Each entry is dated, and a change is added here when it is pushed.
 
+## 0.2.13 - 10-10-2026
+
+### Changed
+
+- The date in a scheduled run's closing line is written the UK way, 10/10/2026, instead of 10-10-2026.
+
 ## 0.2.12 - 10-10-2026
 
 ### Added

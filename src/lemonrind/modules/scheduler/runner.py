@@ -133,7 +133,7 @@ class JobRunner:
             self._chats.add_message(
                 session.id,
                 "assistant",
-                f"This run ended at {ended:%H:%M} on {ended:%d-%m-%Y} and took {format_duration(seconds)}.",
+                f"This run ended at {ended:%H:%M} on {ended:%d/%m/%Y} and took {format_duration(seconds)}.",
             )
             return replace(outcome, seconds=seconds)
         finally:

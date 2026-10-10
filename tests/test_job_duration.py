@@ -21,7 +21,7 @@ from tests.test_scheduler import (
     run_messages,
 )
 
-END_NOTE = re.compile(r"^This run ended at \d\d:\d\d on \d\d-\d\d-\d{4} and took (.+)\.$")
+END_NOTE = re.compile(r"^This run ended at \d\d:\d\d on \d\d/\d\d/\d{4} and took (.+)\.$")
 
 
 @pytest.mark.parametrize(
@@ -52,8 +52,8 @@ async def test_a_finished_run_ends_its_chat_with_when_it_ended_and_how_long_it_t
     match = END_NOTE.match(closing.content)
     assert match is not None and closing.role == "assistant"
     assert (
-        "ended at 19:00 on 02-10-2026" in closing.content
-    )  # the test clock; dd-mm-yyyy as the user writes dates
+        "ended at 19:00 on 02/10/2026" in closing.content
+    )  # the test clock; dd/mm/yyyy as the user writes dates
 
 
 async def test_a_failed_run_also_says_how_long_it_took():
