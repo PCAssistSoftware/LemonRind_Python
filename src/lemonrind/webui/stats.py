@@ -38,6 +38,44 @@ CHIP_TITLES = {
 }
 
 
+@dataclass(slots=True)
+class ChipGroup:
+    """Every call of one tool that ended the same way, shown as one badge ("web_search x12")."""
+
+    name: str
+    state: str
+    count: int
+    details: list[str]  # the distinct error texts of failed calls, in the order they happened
+
+
+def group_chips(chips: Sequence[ToolChip]) -> list[ChipGroup]:
+    """Fold a run of tool calls into one badge per (tool, outcome), tools in the order they were first used.
+
+    A long scheduled run makes dozens of calls to the same few tools; a row per call is unreadable. Outcomes stay
+    separate, so one failed call among twelve is still a red badge of its own and not hidden in a green total.
+    """
+    groups: dict[tuple[str, str], ChipGroup] = {}
+    for chip in chips:
+        group = groups.setdefault((chip.name, chip.state), ChipGroup(chip.name, chip.state, 0, []))
+        group.count += 1
+        if chip.detail and chip.detail not in group.details:
+            group.details.append(chip.detail)
+    first_use = {name: i for i, name in enumerate(dict.fromkeys(c.name for c in chips))}
+    return sorted(
+        groups.values(), key=lambda g: first_use[g.name]
+    )  # stable: outcomes stay in the order met
+
+
+def _chip_tooltip(group: ChipGroup) -> str:
+    """What you see on hover: the real error text for failures (up to three kinds), else how the calls ended."""
+    title = CHIP_TITLES.get(group.state, "")
+    if group.details:
+        more = len(group.details) - 3
+        shown = "\n".join(group.details[:3])
+        return shown + (f"\n(and {more} more kinds of error)" if more > 0 else "")
+    return f"{title} ({group.count} calls)" if group.count > 1 else title
+
+
 class StatsPanel:
     """The right-hand panel: two tabs, Stats (numbers and tool calls) and Modules (what is on and what is off).
 
@@ -131,15 +169,17 @@ class StatsPanel:
                     "tool-chips-empty"
                 )
             with ui.row().classes("gap-1"):
-                for chip in self._chips:
-                    colour = CHIP_COLOURS.get(chip.state, "grey")
+                for group in group_chips(self._chips):
+                    colour = CHIP_COLOURS.get(group.state, "grey")
                     with (
                         ui.badge(color=colour).props("outline").classes("q-pa-xs").mark("tool-chip")
                     ):
                         ui.icon("circle", size="8px").props(f"color={colour}")
-                        ui.label(chip.name)
+                        ui.label(group.name)
+                        if group.count > 1:
+                            ui.label(f"x{group.count}").classes("text-weight-bold")
                     # The real error is what you see on hover, not just "failed".
-                    ui.tooltip(chip.detail or CHIP_TITLES.get(chip.state, ""))
+                    ui.tooltip(_chip_tooltip(group))
 
     def _render_modules(self) -> None:
         for module in self._modules():
