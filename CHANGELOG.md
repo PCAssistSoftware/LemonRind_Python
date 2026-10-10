@@ -6,7 +6,7 @@ What changed in each version of the Python edition, newest first. Each entry is 
 
 ### Changed
 
-- **Tool calls in the right-hand panel are grouped.** A long scheduled run made one badge per call, so a dozen searches and page reads filled the panel. Calls to the same tool now show as one badge with a count (for example "web_search x12"). Calls that succeeded and calls that failed stay as separate badges, so a failure is never hidden in a total, and hovering a red badge still shows the real error.
+- **Tool calls in the right-hand panel are grouped.** A long scheduled run made one badge per call, so a dozen searches and page reads filled the panel. Calls to the same tool now show as one badge with a count (for example "web_search x 12"). Calls that succeeded and calls that failed stay as separate badges, so a failure is never hidden in a total, and hovering a red badge still shows the real error.
 
 ## 0.2.9 - 09-10-2026
 

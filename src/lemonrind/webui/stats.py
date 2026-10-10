@@ -177,7 +177,7 @@ class StatsPanel:
                         ui.icon("circle", size="8px").props(f"color={colour}")
                         ui.label(group.name)
                         if group.count > 1:
-                            ui.label(f"x{group.count}").classes("text-weight-bold")
+                            ui.label(f"x {group.count}").classes("text-weight-bold q-ml-xs")
                     # The real error is what you see on hover, not just "failed".
                     ui.tooltip(_chip_tooltip(group))
 

@@ -87,5 +87,5 @@ async def test_the_panel_shows_one_badge_per_tool_and_outcome_with_a_count(
         )
         for badge in badges
     }
-    assert shown == {"calculate": (["x5"], "positive"), "no_such_tool": ([], "negative")}
+    assert shown == {"calculate": (["x 5"], "positive"), "no_such_tool": ([], "negative")}
     set_context(None)
