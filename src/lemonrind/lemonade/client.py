@@ -173,21 +173,30 @@ def build_stats(
         details = getattr(usage, "prompt_tokens_details", None)
         cached = (getattr(details, "cached_tokens", 0) or 0) if details else 0
 
-    input_tokens = int(timings.get("prompt_n", max(prompt_tokens - cached, 0)))
+    # A backend that has no timing to report may send the field as null rather than leave it out, so every read
+    # here treats None like "absent".
+    input_tokens = int(_number(timings.get("prompt_n"), max(prompt_tokens - cached, 0)))
     if not prompt_tokens:
-        prompt_tokens = input_tokens + int(timings.get("cache_n", 0))
+        prompt_tokens = input_tokens + int(_number(timings.get("cache_n"), 0))
     if not output_tokens:
-        output_tokens = int(timings.get("predicted_n", 0))
+        output_tokens = int(_number(timings.get("predicted_n"), 0))
 
     prompt_ms = timings.get("prompt_ms")
     return RequestStats(
         prompt_tokens=prompt_tokens,
         input_tokens=input_tokens,
         output_tokens=output_tokens,
-        tokens_per_second=float(timings.get("predicted_per_second", 0.0)),
+        tokens_per_second=float(_number(timings.get("predicted_per_second"), 0.0)),
         time_to_first_token=(prompt_ms / 1000.0)
-        if prompt_ms is not None
+        if isinstance(prompt_ms, int | float)
         else measured_first_token_seconds,
+    )
+
+
+def _number(value: Any, default: float) -> float:
+    """``value`` if it is a number, else ``default`` (for a field that is missing, null or not a number)."""
+    return (
+        float(value) if isinstance(value, int | float) and not isinstance(value, bool) else default
     )
 
 

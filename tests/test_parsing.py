@@ -69,3 +69,30 @@ def test_build_stats_falls_back_to_our_own_numbers():
     stats = build_stats(usage=None, timings=None, measured_first_token_seconds=2.5)
     assert stats.time_to_first_token == 2.5
     assert stats.output_tokens == 0 and stats.tokens_per_second == 0.0
+
+
+def test_build_stats_copes_with_timings_the_server_reports_as_null():
+    # A backend with no timing to report sends null rather than leaving the fields out.
+    nulls = {
+        "prompt_n": None,
+        "cache_n": None,
+        "prompt_ms": None,
+        "predicted_n": None,
+        "predicted_per_second": None,
+    }
+    stats = build_stats(usage=None, timings=nulls, measured_first_token_seconds=2.5)
+    assert stats.time_to_first_token == 2.5  # our own stopwatch stands in
+    assert stats.tokens_per_second == 0.0 and stats.output_tokens == 0 and stats.input_tokens == 0
+
+
+def test_build_stats_uses_usage_when_only_the_timings_are_null():
+    class Usage:
+        prompt_tokens = 50
+        completion_tokens = 20
+        prompt_tokens_details = None
+
+    stats = build_stats(
+        Usage(), {"prompt_n": None, "predicted_per_second": None}, measured_first_token_seconds=1.0
+    )
+    assert (stats.prompt_tokens, stats.input_tokens, stats.output_tokens) == (50, 50, 20)
+    assert stats.tokens_per_second == 0.0

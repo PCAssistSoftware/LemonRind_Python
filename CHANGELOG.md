@@ -2,6 +2,12 @@
 
 What changed in each version of the Python edition, newest first. Each entry is dated, and a change is added here when it is pushed.
 
+## 0.2.14 - 29-10-2026
+
+### Fixed
+
+- **Ready for Lemonade 2026.45.** The newer Lemonade reports a speed or a first-token time as null (instead of leaving it out) when a backend has no timing to give. Reading those numbers would have failed the reply; a null now simply counts as "not reported", and the app falls back to its own stopwatch for the first-token time. Checked against a live Lemonade 2026.45.2: the health check, model list, chat streaming with its usage and timing numbers, token counting, embeddings and the server log stream all work, and the new error replies (a missing model is now a 400 saying so, an unknown model a 404) already show their message.
+
 ## 0.2.13 - 10-10-2026
 
 ### Changed
