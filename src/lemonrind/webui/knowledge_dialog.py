@@ -39,7 +39,9 @@ from lemonrind.modules.knowledge import (
     copy_database,
 )
 from lemonrind.modules.knowledge.extract import SUPPORTED_EXTENSIONS
+from lemonrind.modules.knowledge.pictures import PICTURE_EXTENSIONS, data_url, is_picture
 from lemonrind.webui.dialogs import ask_confirm, ask_name_and_description
+from lemonrind.webui.inspectors import make_dialog
 
 TYPE_ICONS = {"file": "description", "folder": "folder", "website": "language", "text": "notes"}
 MAX_KB_FILE_BYTES = (
@@ -275,9 +277,51 @@ def build_knowledge(module: KnowledgeModule, conversation: Conversation) -> None
                     ui.label(source.error or "Failed").classes("text-caption text-negative")
             if source.status == "ingesting":
                 ui.spinner(size="sm")
+            if (
+                source.source_type == "file"
+                and source.reference
+                and is_picture(Path(source.reference))
+            ):
+                picture_buttons(source)
             ui.button(icon="delete", on_click=lambda s=source: remove(s)).props(
                 "flat dense round color=negative"
             ).tooltip("Remove this source")
+
+    def picture_buttons(source: Source) -> None:
+        """A picture is stored as what a vision model wrote about it: let the person read that, or have it redone."""
+        if source.picture_text:
+            ui.button("View text", on_click=lambda s=source: view_picture_text(s)).props(
+                "flat dense no-caps"
+            ).mark("kb-view-text")
+        if source.status != "ingesting":
+            ui.button("Read again", on_click=lambda s=source: read_again(s)).props(
+                "flat dense no-caps"
+            ).tooltip("Read the picture again with the model that is loaded now").mark(
+                "kb-read-again"
+            )
+
+    def view_picture_text(source: Source) -> None:
+        # Made on the page itself, not inside this refreshable list: a redraw of the list would delete it.
+        with ui.context.client.layout:
+            dialog, body = make_dialog(
+                source.display_name,
+                "What the model wrote about this picture. This text is what gets searched.",
+            )
+            with body:
+                image = repo.picture_image(source.id)
+                if image is not None:
+                    ui.image(data_url(image)).classes("w-64 rounded-borders")
+                ui.label(source.picture_text or "").classes("lr-tool-text").style(
+                    "max-height: 50vh"
+                )
+        dialog.open()
+
+    def read_again(source: Source) -> None:
+        kb_id = attached_id()
+        if kb_id is None:
+            return
+        in_background(module.ingestor.reread_picture(kb_id, source.id))
+        sources.refresh()
 
     def remove(source: Source) -> None:
         repo.delete_source(source.id)
@@ -391,13 +435,14 @@ def build_knowledge(module: KnowledgeModule, conversation: Conversation) -> None
         with ui.column().classes("w-full gap-2") as add_panel:
             ui.separator()
             ui.label("Add").classes("text-weight-medium")
-            accepted = ",".join(SUPPORTED_EXTENSIONS)
+            readable = (*SUPPORTED_EXTENSIONS, *PICTURE_EXTENSIONS)
+            accepted = ",".join(readable)
             uploader = (
                 ui.upload(
                     on_multi_upload=ingest_files,
                     multiple=True,
                     auto_upload=True,
-                    label=f"Drop files here or click to choose ({', '.join(SUPPORTED_EXTENSIONS)})",
+                    label=f"Drop files or pictures here, or click to choose ({', '.join(readable)})",
                 )
                 .props(f"accept={accepted} flat bordered")
                 .classes("w-full")

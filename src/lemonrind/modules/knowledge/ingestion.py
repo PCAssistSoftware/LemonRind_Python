@@ -31,9 +31,15 @@ import httpx2 as httpx
 
 from lemonrind.config import Settings
 from lemonrind.embeddings import Embedder
-from lemonrind.lemonade.client import LemonadeError
+from lemonrind.lemonade.client import LemonadeClient, LemonadeError
 from lemonrind.modules.knowledge.chunker import chunk_text
 from lemonrind.modules.knowledge.extract import ExtractionError, extract_text, is_supported
+from lemonrind.modules.knowledge.pictures import (
+    PictureError,
+    describe_picture,
+    is_picture,
+    shrink_picture,
+)
 from lemonrind.modules.knowledge.repository import (
     KnowledgeRepository,
     ModelMismatchError,
@@ -56,15 +62,21 @@ class KnowledgeIngestor:
         embedder: Embedder,
         *,
         transport: httpx.AsyncBaseTransport | None = None,
+        client: LemonadeClient | None = None,
     ) -> None:
         self._settings = settings
         self._repo = repo
         self._embedder = embedder
+        self._client = (
+            client  # reads pictures; without one, a picture is refused with a clear message
+        )
         self._transport = transport  # only tests pass one
 
     # --- the four kinds of source ---------------------------------------------------------------------
 
     async def add_file(self, kb_id: str, path: Path) -> Source:
+        if is_picture(path):
+            return await self._add_picture(kb_id, path)
         return await self._ingest(
             kb_id, "file", str(path), path.name, lambda: asyncio.to_thread(extract_text, path)
         )
@@ -108,6 +120,54 @@ class KnowledgeIngestor:
             self._repo.mark_failed(source.id, str(error))
         except Exception as error:  # a bug or an unexpected failure: still leave an honest record
             logger.exception("Folder ingestion failed")
+            self._repo.mark_failed(source.id, f"{type(error).__name__}: {error}")
+        return self._repo.get_source(source.id) or source
+
+    # --- pictures ---------------------------------------------------------------------------------------
+
+    async def _add_picture(self, kb_id: str, path: Path) -> Source:
+        source = self._repo.create_source(kb_id, "file", str(path), path.name)
+        return await self._read_picture(kb_id, source, path)
+
+    async def reread_picture(self, kb_id: str, source_id: str) -> Source | None:
+        """Read a picture source again with the model that is loaded now (its first reading was poor, say).
+
+        Uses the shrunk copy kept in the knowledge base, so it works even after the original file has gone.
+        """
+        source = self._repo.get_source(source_id)
+        if source is None or source.reference is None or not is_picture(Path(source.reference)):
+            return None
+        self._repo.begin_rereading(source_id)
+        return await self._read_picture(kb_id, source, None)
+
+    async def _read_picture(self, kb_id: str, source: Source, path: Path | None) -> Source:
+        """Describe the picture, keep the description on the source, then chunk and embed it like any text."""
+        try:
+            if self._client is None:
+                raise PictureError("Pictures cannot be read here: no Lemonade connection.")
+            image = (
+                await shrink_picture(path)
+                if path is not None
+                else self._repo.picture_image(source.id)
+            )
+            if image is None:
+                raise PictureError(
+                    "The picture is no longer kept here to read again. Add it again."
+                )
+            if path is not None:
+                # kept before reading, so "Read again" works even if this first reading fails (the loaded model
+                # cannot see pictures, say, and the person loads one that can)
+                self._repo.set_picture(source.id, None, image)
+            text, _model = await describe_picture(self._client, image, source.display_name)
+            self._repo.set_picture(source.id, text)
+            count = await self._save_chunks(kb_id, source.id, text, 0)
+            if count == 0:
+                raise PictureError("The description had no text.")
+            self._repo.mark_ready(source.id, count)
+        except (PictureError, ExtractionError, LemonadeError, ModelMismatchError) as error:
+            self._repo.mark_failed(source.id, str(error))
+        except Exception as error:
+            logger.exception("Picture ingestion failed")
             self._repo.mark_failed(source.id, f"{type(error).__name__}: {error}")
         return self._repo.get_source(source.id) or source
 

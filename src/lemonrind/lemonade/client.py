@@ -415,6 +415,25 @@ class LemonadeClient:
             raise LemonadeError(_describe_openai_error(error, model)) from error
         return [item.embedding for item in sorted(response.data, key=lambda d: d.index)]
 
+    async def describe_image(
+        self, model: str, image: Mapping[str, Any], prompt: str, *, max_tokens: int
+    ) -> str:
+        """One reply (not streamed) to a prompt about a picture, from a model that can see. Returns the text.
+
+        ``image`` is a chat-request picture part (see ``attachments.image_part``). ``max_tokens`` includes a
+        thinking model's thinking, so it must leave room for both.
+        """
+        messages: list[Any] = [
+            {"role": "user", "content": [{"type": "text", "text": prompt}, dict(image)]}
+        ]
+        try:
+            response = await self._openai.chat.completions.create(
+                model=model, messages=messages, max_tokens=max_tokens
+            )
+        except openai.OpenAIError as error:
+            raise LemonadeError(_describe_openai_error(error, model)) from error
+        return response.choices[0].message.content or ""
+
     async def complete_json(
         self,
         messages: Sequence[Mapping[str, Any]],

@@ -82,6 +82,13 @@ KB_MIGRATIONS: list[str] = [
     );
     CREATE INDEX ix_chunks_source ON chunks(source_id);
     """,
+    # 2: a picture is turned into a description by a vision model. The whole description and a shrunk copy of the picture
+    # are kept on its source, so the description can be read, and the picture read again, from the knowledge base
+    # screen even when the original file is gone. NULL for every other kind of source.
+    """
+    ALTER TABLE sources ADD COLUMN picture_text TEXT;
+    ALTER TABLE sources ADD COLUMN picture_image BLOB;
+    """,
 ]
 
 
@@ -121,6 +128,9 @@ class Source:
     error: str | None
     chunk_count: int
     created_at: datetime
+    picture_text: str | None = (
+        None  # what the vision model wrote about a picture; None for other sources
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -165,7 +175,7 @@ def file_name_for(kb_id: str, name: str) -> str:
     return f"{slug}-{kb_id[:8]}{EXTENSION}"
 
 
-_SOURCE_SELECT = "SELECT id, source_type, reference, display_name, status, error, chunk_count, created_at FROM sources"
+_SOURCE_SELECT = "SELECT id, source_type, reference, display_name, status, error, chunk_count, created_at, picture_text FROM sources"
 
 
 def _peek(path: Path) -> dict[str, str]:
@@ -269,6 +279,7 @@ def _source_from_row(kb_id: str, row: sqlite3.Row) -> Source:
         error=row["error"],
         chunk_count=row["chunk_count"],
         created_at=datetime.fromisoformat(row["created_at"]),
+        picture_text=row["picture_text"],
     )
 
 
@@ -521,6 +532,39 @@ class KnowledgeRepository:
                 conn.execute(
                     "UPDATE sources SET status = 'ready', error = NULL, chunk_count = ? WHERE id = ?",
                     (chunk_count, source_id),
+                )
+
+    def set_picture(self, source_id: str, text: str | None, image: bytes | None = None) -> None:
+        """Keep what a vision model wrote about a picture (and, the first time, a shrunk copy of the picture)."""
+        if file := self._file_of_source(source_id):
+            with file.db.transaction() as conn:
+                if image is None:
+                    conn.execute(
+                        "UPDATE sources SET picture_text = ? WHERE id = ?", (text, source_id)
+                    )
+                else:
+                    conn.execute(
+                        "UPDATE sources SET picture_text = ?, picture_image = ? WHERE id = ?",
+                        (text, image, source_id),
+                    )
+
+    def picture_image(self, source_id: str) -> bytes | None:
+        """The shrunk copy of a picture source, or None."""
+        if file := self._file_of_source(source_id):
+            row = file.db.conn.execute(
+                "SELECT picture_image FROM sources WHERE id = ?", (source_id,)
+            ).fetchone()
+            return bytes(row[0]) if row and row[0] is not None else None
+        return None
+
+    def begin_rereading(self, source_id: str) -> None:
+        """Put a source back into the ``ingesting`` state and throw away its chunks, ready to be read again."""
+        if file := self._file_of_source(source_id):
+            with file.db.transaction() as conn:
+                conn.execute("DELETE FROM chunks WHERE source_id = ?", (source_id,))
+                conn.execute(
+                    "UPDATE sources SET status = 'ingesting', error = NULL, chunk_count = 0 WHERE id = ?",
+                    (source_id,),
                 )
 
     def mark_failed(self, source_id: str, error: str) -> None:

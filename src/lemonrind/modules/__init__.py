@@ -70,7 +70,7 @@ def build_registry(
             settings,
             knowledge_repo,
             embedder,
-            KnowledgeIngestor(settings, knowledge_repo, embedder),
+            KnowledgeIngestor(settings, knowledge_repo, embedder, client=client),
         ),
         McpModule(settings, McpServerRepository(db), log_dir=data_dir / "logs"),
         SchedulerModule(settings, SchedulerRepository(db), runner),
