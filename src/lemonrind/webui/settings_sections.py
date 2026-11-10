@@ -38,9 +38,10 @@ from lemonrind.webui.memories_dialog import build_memories
 
 Applier = Callable[[], str | None]
 
-PERSONA_TONES = ["Default", "Casual", "Formal", "Warm", "Concise", "Direct"]
-PERSONA_LENGTHS = ["Default", "Concise", "Detailed"]
+PERSONA_TONES = ["Default", "Casual", "Formal", "Warm", "Concise", "Direct", "Chat-like"]
+PERSONA_LENGTHS = ["Default", "Concise", "Detailed", "One paragraph", "One sentence"]
 PERSONA_EMOJI = ["Default", "None", "Sparing", "Frequent"]
+PERSONA_VOCABULARY = ["Default", "Simple", "Academic"]
 THEME_LABELS = {"system": "Follow my system", "light": "Light", "dark": "Dark"}
 
 
@@ -177,22 +178,51 @@ def build_assistant(settings: Settings) -> Applier:
 
 def build_persona(settings: Settings) -> Applier:
     _note(
-        "Who the assistant is, who it is talking to and how it writes. Anything left blank or at Default adds "
-        "nothing to the prompt."
+        "Who the assistant is, who it is talking to and how it writes. Anything left blank, at Default or switched "
+        "off adds nothing to the prompt."
     )
     persona = settings.persona
     identity = ui.textarea("Identity (who the assistant is)", value=persona.identity)
     identity.props("outlined autogrow").classes("w-full").mark("persona-identity")
     about = ui.textarea("About you (what it should know about you)", value=persona.about_user)
     about.props("outlined autogrow").classes("w-full").mark("persona-about")
+
+    ui.label("Writing style").classes("text-subtitle1 text-weight-medium q-mt-md")
+    _note(
+        "How the assistant writes in your chats. Scheduled jobs ignore these choices, so a report does not come back "
+        "in chat slang. A style is a request to the model, not a hard rule: use Longest reply (in Assistant) for a limit."
+    )
     with ui.row().classes("w-full no-wrap gap-2"):
         tone = ui.select(PERSONA_TONES, value=persona.tone, label="Tone").classes("flex-grow")
         length = ui.select(PERSONA_LENGTHS, value=persona.verbosity, label="Length").classes(
             "flex-grow"
         )
+    with ui.row().classes("w-full no-wrap gap-2"):
         emoji = ui.select(PERSONA_EMOJI, value=persona.emoji_usage, label="Emoji").classes(
             "flex-grow"
         )
+        vocabulary = ui.select(
+            PERSONA_VOCABULARY, value=persona.vocabulary, label="Vocabulary"
+        ).classes("flex-grow")
+    vocabulary.mark("persona-vocabulary")
+
+    ui.label("Formatting to avoid").classes("text-caption lr-muted q-mt-sm")
+    with ui.row().classes("w-full gap-4"):
+        no_markdown = ui.switch("No Markdown", value=persona.no_markdown).mark(
+            "persona-no-markdown"
+        )
+        no_headers = ui.switch("No headers", value=persona.no_headers).mark("persona-no-headers")
+        no_tables = ui.switch("No tables", value=persona.no_tables).mark("persona-no-tables")
+        no_lists = ui.switch("No lists", value=persona.no_lists).mark("persona-no-lists")
+    ui.label("Habits to avoid").classes("text-caption lr-muted")
+    with ui.row().classes("w-full gap-4"):
+        no_flattery = ui.switch("No flattery or praise", value=persona.no_flattery).mark(
+            "persona-no-flattery"
+        )
+        no_em_dashes = ui.switch("No em dashes", value=persona.no_em_dashes).mark(
+            "persona-no-em-dashes"
+        )
+
     instructions = ui.textarea("Other instructions", value=persona.custom_instructions)
     instructions.props("outlined autogrow").classes("w-full")
 
@@ -202,6 +232,13 @@ def build_persona(settings: Settings) -> Applier:
         persona.tone = tone.value
         persona.verbosity = length.value
         persona.emoji_usage = emoji.value
+        persona.vocabulary = vocabulary.value
+        persona.no_markdown = bool(no_markdown.value)
+        persona.no_headers = bool(no_headers.value)
+        persona.no_tables = bool(no_tables.value)
+        persona.no_lists = bool(no_lists.value)
+        persona.no_flattery = bool(no_flattery.value)
+        persona.no_em_dashes = bool(no_em_dashes.value)
         persona.custom_instructions = instructions.value or ""
         return None
 

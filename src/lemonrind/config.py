@@ -81,9 +81,22 @@ class PersonaSettings(BaseModel):
     identity: str = ""  # e.g. "You are Max, a dry-witted assistant."
     about_user: str = ""  # e.g. "I am Darren, a developer in Manchester."
     # The choices are fixed lists so a typo in settings.json is caught when the file is read.
-    tone: Literal["Default", "Casual", "Formal", "Warm", "Concise", "Direct"] = "Default"
-    verbosity: Literal["Default", "Concise", "Detailed"] = "Default"
+    tone: Literal["Default", "Casual", "Formal", "Warm", "Concise", "Direct", "Chat-like"] = (
+        "Default"
+    )
+    # "verbosity" is shown as "Length" on screen (the name is kept so older settings files still load).
+    verbosity: Literal["Default", "Concise", "Detailed", "One paragraph", "One sentence"] = (
+        "Default"
+    )
     emoji_usage: Literal["Default", "None", "Sparing", "Frequent"] = "Default"
+    vocabulary: Literal["Default", "Simple", "Academic"] = "Default"
+    # Formatting and habits the assistant is asked to avoid. Each is a switch: off adds nothing to the prompt.
+    no_markdown: bool = False
+    no_headers: bool = False
+    no_tables: bool = False
+    no_lists: bool = False
+    no_flattery: bool = False
+    no_em_dashes: bool = False
     custom_instructions: str = ""
 
 

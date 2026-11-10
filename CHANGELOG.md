@@ -2,6 +2,23 @@
 
 What changed in each version of the Python edition, newest first. Each entry is dated, and a change is added here when it is pushed.
 
+## 0.2.17 - 10-11-2026
+
+### Added
+
+- **More control over how the assistant writes.** The Persona settings now have a **Writing style** group with more choices:
+  - Tone gains **Chat-like** (short, informal messages as if texting).
+  - Length gains **One paragraph** and **One sentence**.
+  - A new **Vocabulary** choice: Simple or Academic.
+  - Switches to avoid formatting: **No Markdown**, **No headers**, **No tables**, **No lists**.
+  - Switches to avoid habits: **No flattery or praise** (no "You're absolutely right") and **No em dashes**.
+
+  Each choice adds one short line to the system prompt, and anything left at Default or switched off adds nothing. A style is a request to the model, not a hard limit; Longest reply is the hard limit.
+
+### Changed
+
+- **Scheduled jobs ignore the writing style.** A report should not come back in chat slang or in one sentence because that is how you like to chat. Identity and About you still apply.
+
 ## 0.2.16 - 10-11-2026
 
 ### Added

@@ -224,3 +224,39 @@ async def test_scheduled_jobs_use_the_persona_too():
 
     system = client.requests[0]["messages"][0]["content"]
     assert system.startswith("You are Max.") and "scheduled job" in system
+
+
+# --- the newer choices and switches ---------------------------------------------------------------------------------------
+
+
+def test_the_newer_choices_each_add_one_line():
+    style = writing_style(
+        PersonaSettings(tone="Chat-like", verbosity="One paragraph", vocabulary="Simple")
+    )
+    assert "- Tone: Chat-like: short, informal messages, as if texting on a messaging app." in style
+    assert "- Length: One paragraph: answer in a single paragraph." in style
+    assert "- Vocabulary: Simple: use simple, everyday words and short sentences." in style
+
+
+def test_formatting_switches_combine_into_one_line_and_no_markdown_covers_the_rest():
+    some = writing_style(PersonaSettings(no_headers=True, no_tables=True))
+    assert some.count("Formatting:") == 1 and "do not use headers; do not use tables" in some
+    assert "lists" not in some
+
+    covered = writing_style(PersonaSettings(no_markdown=True, no_headers=True, no_lists=True))
+    assert covered.count("Formatting:") == 1 and "do not use Markdown" in covered
+    assert "do not use headers" not in covered  # already covered by "no Markdown"
+
+
+def test_the_habit_switches_add_a_line_each_and_off_adds_nothing():
+    on = writing_style(PersonaSettings(no_flattery=True, no_em_dashes=True))
+    assert "Do not open with praise or agreement" in on and "Do not use em dashes" in on
+    assert writing_style(PersonaSettings()) == ""
+
+
+def test_a_scheduled_job_leaves_the_writing_style_out_but_keeps_the_persona():
+    settings = settings_with(identity="You are Max.", tone="Casual", no_flattery=True)
+    assert "Writing style:" in build_system_prompt(settings)
+    job_prompt = build_system_prompt(settings, include_style=False)
+    assert "Writing style:" not in job_prompt and "Casual" not in job_prompt
+    assert job_prompt.startswith("You are Max.") and BASE in job_prompt

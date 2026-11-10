@@ -199,7 +199,7 @@ A deliberate design priority, because a local model's context is precious:
 
 ### Persona
 
-**Settings > Persona** sets who the assistant is: its name and personality, a standing description of you, and its tone, length and emoji use. All of it is optional and costs nothing when blank.
+**Settings > Persona** sets who the assistant is: its name and personality, a standing description of you, and a **Writing style** group: tone, length, emoji use, vocabulary, formatting to avoid (Markdown, headers, tables, lists) and habits to avoid (flattery, em dashes). Scheduled jobs ignore the writing style. All of it is optional and costs nothing when blank.
 
 ### Organising your chats
 

@@ -273,7 +273,7 @@ class JobRunner:
 
         now = self._clock()
         return (
-            f"{build_system_prompt(self._settings)}\n\n"
+            f"{build_system_prompt(self._settings, include_style=False)}\n\n"
             f"Current date and time: {now:%A %d %B %Y, %H:%M} ({now.tzname()}). "
             "You are running as a scheduled job: nobody is watching, so do the task completely and finish with "
             "a clear final answer."

@@ -50,6 +50,27 @@ async def test_saving_settings_updates_the_prompt_the_file_and_the_theme(
     await user.should_see("You are Rind, a careful assistant.")
 
 
+async def test_the_writing_style_switches_are_saved_and_reach_the_chat_prompt(
+    user: User, web: AppContext
+):
+    await user.open("/")
+    user.find(marker="settings").click()
+    await user.should_see("Writing style")
+
+    user.find(marker="persona-no-markdown").click()
+    user.find(marker="persona-no-em-dashes").click()
+    user.find(marker="settings-save").click()
+    await user.should_not_see("Writing style")
+
+    assert web.settings.persona.no_markdown and web.settings.persona.no_em_dashes
+    assert not web.settings.persona.no_tables
+    saved = json.loads(web.settings_file.read_text(encoding="utf-8"))
+    assert saved["persona"]["no_markdown"] is True
+
+    user.find(marker="view-prompt").click()  # the running chat now asks for the new style
+    await user.should_see("do not use Markdown")
+
+
 async def test_cancelling_settings_changes_nothing(user: User, web: AppContext):
     await user.open("/")
     user.find(marker="settings").click()
