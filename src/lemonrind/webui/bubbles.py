@@ -17,7 +17,7 @@ import re
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 
 from nicegui import ui
 
@@ -50,6 +50,11 @@ def generated_images(text: str) -> list[str]:
 def format_time(moment: datetime) -> str:
     """``14:05`` in the computer's own time zone."""
     return moment.astimezone().strftime("%H:%M")
+
+
+def format_full_time(moment: datetime) -> str:
+    """``10/11/2026 14:05`` (day first, in the computer's own time zone): shown when the pointer rests on a bubble."""
+    return f"{moment.astimezone():%d/%m/%Y %H:%M}"
 
 
 def format_date(moment: datetime) -> str:
@@ -122,7 +127,7 @@ def add_user_message(text: str, created_at: datetime, view: UserView | None = No
     """Your message: a blue bubble on the right, with its picture or document above the text when there is one."""
     view = view or UserView(text)
     with ui.chat_message(name="You", stamp=format_time(created_at), sent=True).classes("w-full"):
-        with ui.column().classes("gap-1"):
+        with ui.column().classes("gap-1").props(f'title="{format_full_time(created_at)}"'):
             if view.image_url:
                 ui.image(view.image_url).classes("rounded-borders").style("max-width: 16rem")
             elif view.image_missing:
@@ -216,7 +221,7 @@ class AssistantBubble:
     messages, which all go into the one bubble).
     """
 
-    def __init__(self, *, thinking_open: bool = False) -> None:
+    def __init__(self, *, thinking_open: bool = False, created_at: datetime | None = None) -> None:
         self._reasoning = ""
         self._text = ""
         self._thinking_started: float | None = None
@@ -238,7 +243,12 @@ class AssistantBubble:
                 )
 
             # Quasar makes every direct child of a chat message its own bubble, so everything goes in ONE column.
-            with ui.column().classes("gap-1 w-full"):
+            # ``title`` is the browser's own hover text: the full date and time of the reply.
+            with (
+                ui.column()
+                .classes("gap-1 w-full")
+                .props(f'title="{format_full_time(created_at or datetime.now(UTC))}"')
+            ):
                 self._recalled_box = ui.column().classes("w-full gap-0")
                 self._progress = ui.label().classes("text-caption lr-warn")
                 self._progress.set_visibility(False)

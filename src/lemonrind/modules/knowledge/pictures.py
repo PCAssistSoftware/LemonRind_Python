@@ -44,6 +44,10 @@ class PictureError(Exception):
     """A picture could not be read. The message is fit to show the person."""
 
 
+class PictureModelError(PictureError):
+    """No loaded model can read pictures right now, so no picture can be read until one is loaded."""
+
+
 def is_picture(path: Path) -> bool:
     return path.suffix.lower() in PICTURE_EXTENSIONS
 
@@ -54,7 +58,7 @@ async def loaded_vision_model(client: LemonadeClient) -> str:
         health = await client.health()
         models = await client.list_models()
     except LemonadeError as error:
-        raise PictureError(f"Could not ask Lemonade which model is loaded: {error}") from error
+        raise PictureModelError(f"Could not ask Lemonade which model is loaded: {error}") from error
 
     by_name = {model.id.lower(): model for model in models}
     loaded = [loaded.model_name for loaded in health.all_models_loaded]
@@ -70,11 +74,11 @@ async def loaded_vision_model(client: LemonadeClient) -> str:
     can_see = sorted(model.id for model in models if model.supports_vision)
     examples = f" Models that can: {', '.join(can_see[:5])}." if can_see else ""
     if chat_loaded:
-        raise PictureError(
+        raise PictureModelError(
             f"The loaded model '{chat_loaded[0]}' cannot read pictures. Load one that can and add the picture "
             f"again.{examples}"
         )
-    raise PictureError(
+    raise PictureModelError(
         f"No chat model is loaded. Load one that can read pictures and add the picture again.{examples}"
     )
 

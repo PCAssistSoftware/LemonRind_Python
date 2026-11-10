@@ -141,3 +141,51 @@ async def test_a_picture_that_is_not_a_picture_is_refused_politely(tmp_path: Pat
     broken.write_bytes(b"this is not an image")
     source = await ingestor.add_file(kb.id, broken)
     assert source.status == "failed" and "could not be read as a picture" in (source.error or "")
+
+
+# --- pictures inside a folder ------------------------------------------------------------------------------------------------
+
+
+def make_folder(tmp_path: Path) -> Path:
+    folder = tmp_path / "docs"
+    (folder / "sub").mkdir(parents=True)
+    (folder / "notes.txt").write_text("The meeting is on Friday at noon in the long room.")
+    make_picture(folder / "sub", "sign.png")
+    return folder
+
+
+async def test_a_folder_reads_its_pictures_with_the_loaded_model(tmp_path: Path):
+    repo, ingestor = world(tmp_path, VisionClient())
+    kb = repo.create_kb("Docs")
+    source = await ingestor.add_folder(kb.id, make_folder(tmp_path))
+
+    assert source.status == "ready" and source.error is None
+    contents = [chunk.content for chunk, _ in repo.searchable_chunks(kb.id)]
+    assert any("Friday" in text for text in contents) and any("OPEN" in text for text in contents)
+
+
+async def test_a_folder_keeps_its_documents_when_the_loaded_model_cannot_see_and_says_so(
+    tmp_path: Path,
+):
+    client = VisionClient("blind")
+    repo, ingestor = world(tmp_path, client)
+    kb = repo.create_kb("Docs")
+    source = await ingestor.add_folder(kb.id, make_folder(tmp_path))
+
+    assert source.status == "ready" and source.chunk_count >= 1  # the text file is in
+    assert "1 picture not read" in (source.error or "") and "cannot read pictures" in (
+        source.error or ""
+    )
+    assert client.asked == []  # no vision request was made for a model that cannot see
+
+
+async def test_a_folder_of_only_pictures_fails_with_the_reason_when_no_model_can_see(
+    tmp_path: Path,
+):
+    repo, ingestor = world(tmp_path, VisionClient("blind"))
+    kb = repo.create_kb("Docs")
+    folder = tmp_path / "pics"
+    folder.mkdir()
+    make_picture(folder, "a.png")
+    source = await ingestor.add_folder(kb.id, folder)
+    assert source.status == "failed" and "cannot read pictures" in (source.error or "")

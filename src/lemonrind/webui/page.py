@@ -114,6 +114,7 @@ class ChatPage:
             compaction_keep_turns=context.settings.assistant.compaction_keep_turns,
         )
         self.conversation.time_awareness = True  # the model is always told the real date and time
+        self.conversation.max_output_tokens = context.settings.assistant.max_reply_tokens
         self.stats_panel = StatsPanel(
             modules=lambda: context.modules.modules if context.modules else (),
             on_tab_change=self._stats_tab_changed,
@@ -676,7 +677,9 @@ class ChatPage:
                 elif message.role == "assistant":
                     if bubble is None:
                         self._divider_if_new_day(message.created_at)
-                        bubble = AssistantBubble(thinking_open=thinking_open)
+                        bubble = AssistantBubble(
+                            thinking_open=thinking_open, created_at=message.created_at
+                        )
                     bubble.show_stored(message)
                 elif message.role == "tool" and bubble is not None:
                     bubble.show_stored_tool_result(message)
@@ -886,6 +889,8 @@ class ChatPage:
                 if isinstance(event, ToolStarted | ToolFinished):
                     self.stats_panel.set_tool_calls(bubble.tool_chips())
 
+            # Read afresh each time, so a change in Settings applies to the very next message.
+            self.conversation.max_output_tokens = self.context.settings.assistant.max_reply_tokens
             with self.messages:
                 return await self.conversation.send(text, on_event, attachment=attachment)
 

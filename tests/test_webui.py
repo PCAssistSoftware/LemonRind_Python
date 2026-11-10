@@ -8,6 +8,7 @@ page contains that text, ``user.find(marker=...)`` finds a widget by the marker 
 from __future__ import annotations
 
 import asyncio
+import re
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
@@ -164,6 +165,22 @@ async def test_the_latest_chat_is_reopened_with_its_messages(user: User, web: Ap
     await user.open("/")
     await user.should_see("Otters are playful.")
     await user.should_see("Tell me about otters")
+
+
+async def test_resting_the_pointer_on_a_bubble_shows_its_full_date_and_time(
+    user: User, web: AppContext
+):
+    chat = web.repo.create_session()
+    web.repo.add_message(chat.id, "user", "Tell me about otters")
+    web.repo.add_message(chat.id, "assistant", "Otters are playful.")
+
+    await user.open("/")
+    await user.should_see("Otters are playful.")
+    titles = [element.props.get("title") for element in user.find(kind=ui.column).elements]
+    stamped = [
+        title for title in titles if title and re.fullmatch(r"\d\d/\d\d/\d{4} \d\d:\d\d", title)
+    ]
+    assert len(stamped) == 2  # one for each bubble, day first, as in the other editions
 
 
 async def test_the_next_message_continues_the_opened_chat(

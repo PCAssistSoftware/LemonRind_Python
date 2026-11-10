@@ -232,3 +232,36 @@ async def test_the_continue_button_asks_the_model_to_carry_on_and_then_goes_away
         )  # and the new reply finished normally, so it has none
     finally:
         set_context(None)
+
+
+# --- the chat's own Longest reply -------------------------------------------------------------------------------------------
+
+
+def test_the_default_longest_chat_reply_leaves_room_for_thinking_too():
+    from lemonrind.config import AssistantSettings
+
+    assert AssistantSettings().max_reply_tokens == 32768
+
+
+async def test_the_chat_longest_reply_is_shown_changed_saved_and_used_by_the_next_message(
+    user: User, tmp_path: Path
+):
+    context = make_context(tmp_path, FakeLemonade())
+    set_context(context)
+    register_pages()
+    try:
+        await user.open("/")
+        await open_section(user, "assistant")
+        (box,) = elements(user, "assistant-max-reply")
+        assert box.value == 32768
+        box.value = 8192
+        user.find(marker="settings-save").click()
+        for _ in range(40):
+            if context.settings.assistant.max_reply_tokens == 8192:
+                break
+            await asyncio.sleep(0.05)
+        assert context.settings.assistant.max_reply_tokens == 8192
+        saved = json.loads(context.settings_file.read_text(encoding="utf-8"))["assistant"]
+        assert saved["max_reply_tokens"] == 8192
+    finally:
+        set_context(None)

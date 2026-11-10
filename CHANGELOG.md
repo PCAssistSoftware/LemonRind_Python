@@ -2,13 +2,20 @@
 
 What changed in each version of the Python edition, newest first. Each entry is dated, and a change is added here when it is pushed.
 
+## 0.2.16 - 10-11-2026
+
+### Added
+
+- **Hover for the date and time.** Resting the pointer on a message bubble, yours or the assistant's, shows its full date and time, such as 10/11/2026 14:05.
+- **Longest reply for chat.** Settings > Assistant has a new **Longest reply (tokens)** box: the most the model may write in one reply, counting its thinking (default 32,768). Before this, chat replies had no limit set at all. A reply that reaches it is cut off and offers the Continue button. It applies from the next message.
+- **Pictures inside a folder.** A folder source now reads the pictures in it as well as the documents, using the vision model that is loaded. If the loaded model cannot see pictures, the documents are still added and the source says how many pictures were left out and why.
+
 ## 0.2.15 - 10-11-2026
 
 ### Added
 
 - **Pictures in a knowledge base.** A `.png`, `.jpg`, `.jpeg`, `.webp`, `.gif` or `.bmp` can now be added like any other file. The chat model that is loaded in Lemonade reads the picture: it writes out any text in it word for word, then describes what it shows, and that description is what gets searched. It suits screenshots, scanned text, charts and diagrams; for a photograph with nothing to read, the description is only as good as the model's eye. Nothing is loaded or swapped to do it: if the loaded model cannot see pictures, the source says so and names models that can.
 - **View text and Read again.** A picture source has a **View text** button that opens what the model wrote (with the picture beside it), and a **Read again** button that has the model that is loaded now read it afresh, for when the first reading was poor or the wrong model was loaded. A shrunk copy of the picture is kept inside the knowledge base file, so this works after the original is gone, and the picture travels with the file to another computer.
-- Pictures inside a folder source are skipped (a folder of documents often holds logos and icons); add the ones you want one by one.
 
 ## 0.2.14 - 29-10-2026
 

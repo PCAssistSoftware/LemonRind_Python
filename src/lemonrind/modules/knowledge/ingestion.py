@@ -36,8 +36,10 @@ from lemonrind.modules.knowledge.chunker import chunk_text
 from lemonrind.modules.knowledge.extract import ExtractionError, extract_text, is_supported
 from lemonrind.modules.knowledge.pictures import (
     PictureError,
+    PictureModelError,
     describe_picture,
     is_picture,
+    loaded_vision_model,
     shrink_picture,
 )
 from lemonrind.modules.knowledge.repository import (
@@ -97,25 +99,47 @@ class KnowledgeIngestor:
     async def add_folder(self, kb_id: str, folder: Path) -> Source:
         source = self._repo.create_source(kb_id, "folder", str(folder), folder.name or str(folder))
         try:
-            files = sorted(p for p in folder.rglob("*") if p.is_file() and is_supported(p))
+            files = sorted(
+                p for p in folder.rglob("*") if p.is_file() and (is_supported(p) or is_picture(p))
+            )
             if not files:
                 raise ExtractionError("No supported files were found in this folder.")
             if len(files) > MAX_FOLDER_FILES:
                 raise ExtractionError(
                     f"The folder has {len(files):,} supported files; the limit is {MAX_FOLDER_FILES:,}."
                 )
-            total = skipped = 0
+            total = skipped = skipped_pictures = 0
+            picture_problem: str | None = (
+                None  # why the model cannot read pictures right now, once known
+            )
             for file in files:
                 try:
-                    text = await asyncio.to_thread(extract_text, file)
-                except ExtractionError:
+                    if is_picture(file):
+                        if picture_problem is None:
+                            try:
+                                text = await self._picture_text(file)
+                            except PictureModelError as error:
+                                picture_problem = str(
+                                    error
+                                )  # every other picture would fail the same way
+                        if picture_problem is not None:
+                            skipped_pictures += 1
+                            continue
+                    else:
+                        text = await asyncio.to_thread(extract_text, file)
+                except (ExtractionError, PictureError):
                     skipped += 1  # unreadable: skip it, keep the rest
                     continue
                 label = file.relative_to(folder).as_posix()
                 total += await self._save_chunks(kb_id, source.id, text, total, label)
             if total == 0:
-                raise ExtractionError("None of the files in this folder could be read.")
-            self._repo.mark_ready(source.id, total)
+                raise ExtractionError(
+                    picture_problem or "None of the files in this folder could be read."
+                )
+            note = None
+            if skipped_pictures:
+                note = f"{skipped_pictures} picture{'s' if skipped_pictures != 1 else ''} not read: {picture_problem}"
+            self._repo.mark_ready(source.id, total, note)
         except (ExtractionError, LemonadeError, ModelMismatchError) as error:
             self._repo.mark_failed(source.id, str(error))
         except Exception as error:  # a bug or an unexpected failure: still leave an honest record
@@ -124,6 +148,17 @@ class KnowledgeIngestor:
         return self._repo.get_source(source.id) or source
 
     # --- pictures ---------------------------------------------------------------------------------------
+
+    async def _picture_text(self, path: Path) -> str:
+        """What the loaded vision model says about a picture inside a folder. ``PictureModelError`` if no model can."""
+        if self._client is None:
+            raise PictureModelError("Pictures cannot be read here: no Lemonade connection.")
+        await loaded_vision_model(
+            self._client
+        )  # raises PictureModelError when the loaded model cannot see
+        image = await shrink_picture(path)
+        text, _model = await describe_picture(self._client, image, path.name)
+        return text
 
     async def _add_picture(self, kb_id: str, path: Path) -> Source:
         source = self._repo.create_source(kb_id, "file", str(path), path.name)

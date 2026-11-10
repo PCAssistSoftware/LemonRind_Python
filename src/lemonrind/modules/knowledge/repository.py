@@ -526,12 +526,13 @@ class KnowledgeRepository:
         rows = file.db.conn.execute(f"{_SOURCE_SELECT} ORDER BY created_at, rowid")
         return [_source_from_row(kb_id, row) for row in rows]
 
-    def mark_ready(self, source_id: str, chunk_count: int) -> None:
+    def mark_ready(self, source_id: str, chunk_count: int, note: str | None = None) -> None:
+        """The source is searchable. ``note`` (in the ``error`` column) says if something in it was left out."""
         if file := self._file_of_source(source_id):
             with file.db.transaction() as conn:
                 conn.execute(
-                    "UPDATE sources SET status = 'ready', error = NULL, chunk_count = ? WHERE id = ?",
-                    (chunk_count, source_id),
+                    "UPDATE sources SET status = 'ready', error = ?, chunk_count = ? WHERE id = ?",
+                    (note, chunk_count, source_id),
                 )
 
     def set_picture(self, source_id: str, text: str | None, image: bytes | None = None) -> None:

@@ -146,8 +146,30 @@ def build_assistant(settings: Settings) -> Applier:
         "summary of a long chat are added after it. Use 'View system prompt' in the right-hand panel to see the result."
     )
 
+    reply_limit = (
+        ui.number(
+            "Longest reply (tokens)",
+            value=settings.assistant.max_reply_tokens,
+            min=256,
+            max=131_072,
+            precision=0,
+        )
+        .props("outlined dense")
+        .classes("w-full")
+        .mark("assistant-max-reply")
+    )
+    _note(
+        "The most the model may write in one reply, counting its thinking too. A reply that reaches it is cut off "
+        "(a Continue button appears). A model that thinks a lot needs a bigger number; a longer reply takes longer "
+        "to write. Allowed: 256 to 131,072. The default is 32,768. Applies from the next message."
+    )
+
     def apply() -> str | None:
+        number = reply_limit.value
+        if number is None or not (256 <= number <= 131_072):
+            return "Longest reply must be between 256 and 131,072 tokens."
         settings.assistant.system_prompt = prompt.value
+        settings.assistant.max_reply_tokens = int(number)
         return None
 
     return apply

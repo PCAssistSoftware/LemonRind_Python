@@ -68,6 +68,9 @@ class AssistantSettings(BaseModel):
     # How many of the most recent exchanges (a message of yours and everything the assistant did in reply)
     # are always kept word for word.
     compaction_keep_turns: int = Field(default=3, ge=1, le=20)
+    # The most the model may write in one reply, counting its thinking. A model that thinks a lot can use all of it
+    # thinking and leave no answer, so this is generous by default. (Scheduled runs have their own, in Scheduler.)
+    max_reply_tokens: int = Field(default=32768, ge=256, le=131_072)
 
 
 class PersonaSettings(BaseModel):

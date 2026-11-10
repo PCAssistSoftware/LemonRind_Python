@@ -152,6 +152,7 @@ class ChatLoop:
             compaction_keep_turns=settings.assistant.compaction_keep_turns,
         )
         self.conversation.time_awareness = True  # the model is always told the real date and time
+        self.conversation.max_output_tokens = settings.assistant.max_reply_tokens
         self._attachment: Attachment | None = None  # waiting to go with the next message
         self._listing: list[ChatSession] = []  # the numbered list from the last /chats or /search
         self._memory_listing: list[Memory] = []  # the numbered list from the last /memories

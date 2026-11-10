@@ -273,6 +273,10 @@ def build_knowledge(module: KnowledgeModule, conversation: Conversation) -> None
                     ui.label(
                         f"{source.chunk_count:,} chunk{'' if source.chunk_count == 1 else 's'}"
                     ).classes("text-caption lr-muted")
+                    if (
+                        source.error
+                    ):  # something was left out, such as pictures the loaded model could not read
+                        ui.label(source.error).classes("text-caption lr-warn")
                 else:
                     ui.label(source.error or "Failed").classes("text-caption text-negative")
             if source.status == "ingesting":
