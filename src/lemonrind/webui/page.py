@@ -57,6 +57,7 @@ from lemonrind.lemonade.selection import (
 )
 from lemonrind.modules import ImagesModule, KnowledgeModule, McpModule, SchedulerModule
 from lemonrind.modules.knowledge import OPTION_KEY as KNOWLEDGE_OPTION
+from lemonrind.modules.plan import PLAN_TOOL, plan_from_arguments
 from lemonrind.modules.tool import ToolError
 from lemonrind.webui.bubbles import (
     AssistantBubble,
@@ -941,6 +942,7 @@ class ChatPage:
         if self._continuable is not None and not self._continuable.root.is_deleted:
             self._continuable.hide_continue()  # a newer message makes the old button stale
         self._continuable = None
+        self.stats_panel.set_plan(None)  # a new message starts without the last plan
         thinking_open = self.context.settings.ui.thinking_open_by_default
         with self.messages:
             if not self.hint.is_deleted:
@@ -958,6 +960,13 @@ class ChatPage:
                 bubble.on_event(event)
                 if isinstance(event, ToolStarted | ToolFinished):
                     self.stats_panel.set_tool_calls(bubble.tool_chips())
+                if (
+                    isinstance(event, ToolFinished)
+                    and event.call.name == PLAN_TOOL
+                    and not event.result.is_error
+                    and (plan := plan_from_arguments(event.call.arguments)) is not None
+                ):
+                    self.stats_panel.set_plan(plan)
                 elif isinstance(event, SteeringApplied):
                     self._delivered_note = event.text
                     self._render_queued()

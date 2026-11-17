@@ -269,7 +269,7 @@ async def test_the_app_context_opens_the_database_builds_modules_and_closes_them
         context.settings.lemonade.base_url == "http://elsewhere:9999/v1/"
     )  # the trailing slash is added
     assert (tmp_path / "data" / "settings.json").is_file()  # created on first run
-    assert context.modules is not None and len(context.modules.modules) == 11
+    assert context.modules is not None and len(context.modules.modules) == 12
     assert context.repo.list_sessions() == []
 
     context.save_settings()

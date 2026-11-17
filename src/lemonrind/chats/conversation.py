@@ -63,6 +63,14 @@ from lemonrind.lemonade.events import (
     ToolCallsRequested,
 )
 from lemonrind.modules.base import ChatContext
+from lemonrind.modules.plan import (
+    MAX_PLAN_NUDGES,
+    MAX_PLAN_ONLY_ROUNDS,
+    PLAN_TOOL,
+    Plan,
+    plan_from_arguments,
+    plan_reminder,
+)
 from lemonrind.modules.tool import ToolResult
 
 logger = logging.getLogger(__name__)
@@ -271,6 +279,11 @@ class Conversation:
         self.max_output_tokens: int | None = None
         # Messages sent while a reply is being worked on. They are handed over at the next step (after a round of
         # tool calls); whatever is still waiting when the reply ends is for the front end to send as a new message.
+        # The plan the assistant last wrote with the update_plan tool. A scheduled job sets ``enforce_plan`` so that
+        # an answer given with steps still open sends the model back to them (a few times at most).
+        self.plan: Plan | None = None
+        self.enforce_plan = False
+        self.plan_nudges = 0
         self._steering: list[str] = []
         self._applied_steering: list[str] = []
         # When on, every message is sent with the current date and time added (volatile text goes in the message, not the
@@ -444,6 +457,7 @@ class Conversation:
         answer: list[str] = []
         streaming = False  # True only while a reply is arriving (not while a tool runs)
         reply: Reply | None = None
+        plan_only_rounds = 0  # rounds in a row in which the only thing done was editing the plan
         overflow_retried = (
             False  # a too-long request is retried once, after summarising the older messages
         )
@@ -454,7 +468,10 @@ class Conversation:
                 finished: Finished | None = None
                 calls: tuple[ToolCall, ...] = ()
                 # On the last allowed round tools are withheld, so the model has to answer in words.
-                offered = self._tool_schemas() if round_number < self.max_rounds else []
+                stalled = (
+                    plan_only_rounds >= MAX_PLAN_ONLY_ROUNDS
+                )  # only editing the plan: make it answer
+                offered = [] if stalled or round_number >= self.max_rounds else self._tool_schemas()
 
                 limits = {"max_tokens": self.max_output_tokens} if self.max_output_tokens else {}
                 while True:
@@ -502,6 +519,32 @@ class Conversation:
                 if stats is not None:
                     round_stats.append(stats)
 
+                if (
+                    not calls
+                    and self.tools is not None
+                    and self.enforce_plan
+                    and self.plan is not None
+                    and not self.plan.complete
+                    and self.plan_nudges < MAX_PLAN_NUDGES
+                    and round_number < self.max_rounds
+                ):
+                    # It tried to finish with steps of its own plan still open: keep what it said, remind it.
+                    self.plan_nudges += 1
+                    if round_text:
+                        self.history.append({"role": "assistant", "content": round_text})
+                        pending.append(
+                            _Pending(
+                                "assistant",
+                                round_text,
+                                reasoning=round_thinking or None,
+                                stats=stats,
+                            )
+                        )
+                    reminder = plan_reminder(self.plan)
+                    self.history.append({"role": "user", "content": reminder})
+                    pending.append(_Pending("user", reminder))
+                    continue
+
                 if not calls or self.tools is None or round_number >= self.max_rounds:
                     reply = Reply(
                         text=round_text,
@@ -531,6 +574,8 @@ class Conversation:
                 )
                 for call in calls:
                     result = await self._run_tool(call, on_event)
+                    if call.name == PLAN_TOOL and not result.is_error:
+                        self.plan = plan_from_arguments(call.arguments) or self.plan
                     self.history.append(
                         {"role": "tool", "tool_call_id": call.id, "content": result.content}
                     )
@@ -542,6 +587,9 @@ class Conversation:
                             tool_failed=result.is_error,
                         )
                     )
+                plan_only_rounds = (
+                    plan_only_rounds + 1 if all(c.name == PLAN_TOOL for c in calls) else 0
+                )
                 # A message sent while the tools ran goes to the model now, before its next request.
                 if self._steering:
                     notes, self._steering = self._steering, []

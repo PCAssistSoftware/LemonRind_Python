@@ -59,6 +59,7 @@ STATUS_COLOURS = {
     "interrupted": "warning",
     "stopped": "warning",
     "cut short": "warning",
+    "incomplete": "warning",
     "missed": "warning",
 }
 

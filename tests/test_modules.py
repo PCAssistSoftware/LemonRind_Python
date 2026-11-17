@@ -216,6 +216,7 @@ def test_build_registry_lists_every_module_with_its_own_key():
 
     assert [m.config_key for m in registry.modules] == [
         "utilities",
+        "plan",
         "web_search",
         "web_reader",
         "filesystem",
@@ -227,7 +228,7 @@ def test_build_registry_lists_every_module_with_its_own_key():
         "images",
         "backup",
     ]
-    assert len({m.name for m in registry.modules}) == 11
+    assert len({m.name for m in registry.modules}) == 12
 
 
 # --- utilities --------------------------------------------------------------------------------------------

@@ -41,6 +41,7 @@ from typing import TYPE_CHECKING, Any
 from lemonrind.config import Settings
 from lemonrind.lemonade.client import LemonadeError
 from lemonrind.lemonade.selection import ModelSelectionError, pick_chat_model
+from lemonrind.modules.plan import PLAN_TOOL
 from lemonrind.modules.registry import ModuleRegistry
 from lemonrind.modules.scheduler.live import LiveRuns
 from lemonrind.modules.scheduler.repository import ScheduledJob
@@ -171,6 +172,8 @@ class JobRunner:
                 max_rounds=config.max_tool_rounds,
             )
             conversation.max_output_tokens = config.max_output_tokens
+            # Nobody is watching a job, so a plan the model wrote is held to: it is sent back to unfinished steps.
+            conversation.enforce_plan = self._plan_enabled()
             conversation.session = (
                 session  # the messages are saved into the chat that already exists
             )
@@ -238,6 +241,17 @@ class JobRunner:
                     "have stopped before finishing. Try splitting it into smaller jobs, or ask it to search "
                     "and read less.",
                 )
+            plan = conversation.plan
+            if plan is not None and not plan.complete:
+                open_steps = ", ".join(str(n) for n in plan.unfinished)
+                self._chats.add_message(
+                    session.id,
+                    "assistant",
+                    f"Warning: the model gave its final answer with {len(plan.unfinished)} of the "
+                    f"{len(plan.steps)} steps of its own plan not done (steps {open_steps}), even after being "
+                    "reminded, so the job may be incomplete. Check the plan above against the answer.",
+                )
+                return JobOutcome("incomplete", session.id, "its plan was not finished")
             return JobOutcome("ok", session.id, "finished")
         except TimeoutError:
             minutes = config.job_timeout_seconds / 60
@@ -266,6 +280,10 @@ class JobRunner:
             job.model, health, models, default=self._settings.lemonade.chat_model
         )
 
+    def _plan_enabled(self) -> bool:
+        """Is the Plan module switched on? (It is when the settings do not say.)"""
+        return self._settings.modules.enabled.get("plan", True)
+
     def _system_prompt(self) -> str:
         from lemonrind.chats import (
             build_system_prompt,  # imported here for the circular-import reason in ``run``
@@ -277,6 +295,13 @@ class JobRunner:
             f"Current date and time: {now:%A %d %B %Y, %H:%M} ({now.tzname()}). "
             "You are running as a scheduled job: nobody is watching, so do the task completely and finish with "
             "a clear final answer."
+            + (
+                f" If the task has three or more steps, your very first action must be a call to {PLAN_TOOL} "
+                "listing the steps, before you use any other tool. Call it again as you finish each step, "
+                "and do not give your final answer until every step is done."
+                if self._plan_enabled()
+                else ""
+            )
         )
 
     def _failure(

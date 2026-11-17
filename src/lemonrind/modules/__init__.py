@@ -24,6 +24,7 @@ from lemonrind.modules.knowledge import (
 )
 from lemonrind.modules.mcp import McpModule, McpServerRepository
 from lemonrind.modules.memory import MemoryModule, MemoryRepository
+from lemonrind.modules.plan import PlanModule
 from lemonrind.modules.registry import ModuleRegistry
 from lemonrind.modules.scheduler import JobRunner, SchedulerModule, SchedulerRepository
 from lemonrind.modules.tool import Tool, ToolError, ToolResult, tool_from_function
@@ -61,6 +62,7 @@ def build_registry(
     files = FileSystemModule(settings, data_dir)
     modules: list[Module] = [
         UtilitiesModule(settings),
+        PlanModule(settings),
         WebSearchModule(settings),
         WebReaderModule(settings),
         files,
@@ -91,6 +93,7 @@ __all__ = [
     "McpModule",
     "MemoryModule",
     "Module",
+    "PlanModule",
     "ModuleRegistry",
     "SchedulerModule",
     "Tool",

@@ -12,6 +12,7 @@ from lemonrind.lemonade.client import LemonadeError
 from lemonrind.lemonade.events import RequestStats
 from lemonrind.lemonade.models import SystemStats
 from lemonrind.modules.base import Module
+from lemonrind.modules.plan import Plan
 from lemonrind.webui.bubbles import ToolChip
 
 
@@ -101,6 +102,12 @@ def _chip_tooltip(group: ChipGroup) -> str:
 
 SERVER_POLL_SECONDS = 3.0
 
+PLAN_ICONS = {
+    "done": ("check_circle", "positive"),
+    "now": ("play_circle", "primary"),
+    "todo": ("radio_button_unchecked", "grey"),
+}
+
 
 def _percent_text(value: float | None) -> str:
     return "n/a" if value is None else f"{value:.0f}%"
@@ -137,6 +144,7 @@ class StatsPanel:
         self._last: RequestStats | None = None
         self._totals = SessionTotals()
         self._chips: list[ToolChip] = []
+        self._plan: Plan | None = None
         self.tab = "stats"
 
     def build(self) -> None:
@@ -195,6 +203,11 @@ class StatsPanel:
         self._totals = totals
         self.render.refresh()
 
+    def set_plan(self, plan: Plan | None) -> None:
+        """Show the checklist the assistant is working through (None: no plan, the card is hidden)."""
+        self._plan = plan
+        self.render.refresh()
+
     def set_tool_calls(self, chips: list[ToolChip]) -> None:
         """Show the tool calls of the latest reply (empty list: none)."""
         self._chips = chips
@@ -250,6 +263,19 @@ class StatsPanel:
             with ui.grid(columns=2).classes("w-full"):
                 _tile(f"{self._totals.input_tokens:,}", "Total input", color="positive")
                 _tile(f"{self._totals.output_tokens:,}", "Total output", color="positive")
+        if self._plan is not None:
+            with ui.card().props("flat bordered").classes("w-full").mark("plan-card"):
+                ui.label(f"Plan ({len(self._plan.done)} of {len(self._plan.steps)} done)").classes(
+                    "text-weight-medium"
+                )
+                for number, text in enumerate(self._plan.steps, 1):
+                    status = self._plan.status(number)
+                    icon, colour = PLAN_ICONS[status]
+                    with ui.row().classes("items-start no-wrap gap-2"):
+                        ui.icon(icon, size="xs").props(f"color={colour}")
+                        ui.label(text).classes(
+                            "text-caption" + (" lr-muted" if status == "done" else "")
+                        )
         with ui.card().props("flat bordered").classes("w-full"):
             ui.label("Tool calls this turn").classes("text-weight-medium")
             if not self._chips:
