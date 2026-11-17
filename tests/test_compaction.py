@@ -265,3 +265,84 @@ async def test_the_web_page_marks_where_a_chat_was_summarised(user, tmp_path):
     await user.should_see("summarised to save space")
     await user.should_see("recent answer")
     set_context(None)
+
+
+# --- a request the server says is too long ----------------------------------------------------------------------------------
+
+TOO_LONG = (
+    "Lemonade rejected the request for model 'm': request (9999 tokens) exceeds the available context size "
+    "(1000 tokens)"
+)
+
+
+class OverflowStreamer(CompactingStreamer):
+    """Like the server when the prompt does not fit: rejects any request that carries more than ``limit`` messages."""
+
+    def __init__(self, *, limit: int = 7, always: bool = False) -> None:
+        super().__init__(
+            prompt_tokens=100
+        )  # replies report a roomy context, so ordinary compaction never starts
+        self.limit = limit
+        self.always = always
+        self.rejected = 0
+
+    async def stream_chat(self, messages, model, **kwargs) -> AsyncIterator[ChatEvent]:
+        is_summary = list(messages)[0]["content"] == SYSTEM_PROMPT
+        if not is_summary and (self.always or len(list(messages)) > self.limit):
+            self.rejected += 1
+            raise LemonadeError(TOO_LONG)
+        async for event in super().stream_chat(messages, model, **kwargs):
+            yield event
+
+
+async def test_a_request_the_server_rejects_as_too_long_is_summarised_and_asked_again_once():
+    streamer = OverflowStreamer()
+    conversation, repo = make(streamer)
+    for text in ("one", "two", "three"):
+        await conversation.send(text)
+    assert streamer.rejected == 0
+
+    reply = await conversation.send(
+        "four"
+    )  # eight messages: too long, so it is rejected, summarised and retried
+
+    assert reply.text.startswith("reply")
+    assert streamer.rejected == 1 and len(streamer.summary_requests) == 1
+    sent = streamer.requests[-1]
+    assert sent[0]["content"].endswith("SUMMARY 1")
+    assert sent[-1]["content"] == "four"  # the new message survived the summarising
+    assert "one" not in [m["content"] for m in sent[1:]]
+    session = conversation.session
+    assert (
+        session is not None and len(repo.list_messages(session.id)) == 8
+    )  # all four exchanges stored
+
+
+async def test_a_second_rejection_is_reported_not_retried_forever():
+    streamer = OverflowStreamer()
+    conversation, repo = make(streamer)
+    # three exchanges first, so there are old messages to summarise; then the server rejects everything
+    for text in ("one", "two", "three"):
+        await conversation.send(text)
+    streamer.always = True
+
+    with pytest.raises(LemonadeError, match="exceeds the available context size"):
+        await conversation.send("four")
+
+    assert streamer.rejected == 2  # the first try and the one retry, no more
+    session = conversation.session
+    assert (
+        session is not None and len(repo.list_messages(session.id)) == 6
+    )  # the failed exchange is not saved
+
+
+async def test_with_compaction_switched_off_a_too_long_request_is_just_reported():
+    streamer = OverflowStreamer()
+    conversation, _ = make(streamer, compaction_percent=0)
+    for text in ("one", "two", "three"):
+        await conversation.send(text)
+
+    with pytest.raises(LemonadeError):
+        await conversation.send("four")
+
+    assert streamer.summary_requests == [] and streamer.rejected == 1

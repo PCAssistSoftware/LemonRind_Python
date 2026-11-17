@@ -48,6 +48,15 @@ from lemonrind.lemonade.events import (
 from lemonrind.lemonade.models import Health, ModelInfo
 
 
+def is_context_overflow(error: Exception) -> bool:
+    """Whether Lemonade rejected a request because it was longer than the model's context window.
+
+    The server's own wording is "request (N tokens) exceeds the available context size (M tokens)"; the message
+    survives in the text of our ``LemonadeError``.
+    """
+    return "exceeds the available context size" in str(error).lower()
+
+
 class LemonadeError(Exception):
     """Anything that went wrong talking to Lemonade, with a message fit to show the user."""
 

@@ -51,6 +51,7 @@ from lemonrind.attachments import (
 from lemonrind.chats.compaction import SUMMARY_HEADER, split_for_compaction, summarise
 from lemonrind.chats.models import ChatSession, Role, StoredMessage
 from lemonrind.chats.repository import ChatRepository
+from lemonrind.lemonade.client import LemonadeError, is_context_overflow
 from lemonrind.lemonade.events import (
     ChatEvent,
     Finished,
@@ -418,6 +419,9 @@ class Conversation:
         answer: list[str] = []
         streaming = False  # True only while a reply is arriving (not while a tool runs)
         reply: Reply | None = None
+        overflow_retried = (
+            False  # a too-long request is retried once, after summarising the older messages
+        )
 
         try:
             for round_number in range(1, max(1, self.max_rounds) + 1):
@@ -427,27 +431,44 @@ class Conversation:
                 # On the last allowed round tools are withheld, so the model has to answer in words.
                 offered = self._tool_schemas() if round_number < self.max_rounds else []
 
-                streaming = True
                 limits = {"max_tokens": self.max_output_tokens} if self.max_output_tokens else {}
-                async for event in self._client.stream_chat(
-                    self._request_messages(turn_start, text, background),
-                    self.model,
-                    tools=offered or None,
-                    **limits,
-                ):
-                    match event:
-                        case ReasoningDelta(text=piece):
-                            reasoning.append(piece)
-                        case TextDelta(text=piece):
-                            answer.append(piece)
-                        case ToolCallsRequested(calls=requested):
-                            calls = requested
-                        case Finished():
-                            finished = event
-                        case PromptProgress():
-                            pass  # only for the front end to display
-                    if on_event is not None:
-                        on_event(event)
+                while True:
+                    streaming = True
+                    try:
+                        async for event in self._client.stream_chat(
+                            self._request_messages(turn_start, text, background),
+                            self.model,
+                            tools=offered or None,
+                            **limits,
+                        ):
+                            match event:
+                                case ReasoningDelta(text=piece):
+                                    reasoning.append(piece)
+                                case TextDelta(text=piece):
+                                    answer.append(piece)
+                                case ToolCallsRequested(calls=requested):
+                                    calls = requested
+                                case Finished():
+                                    finished = event
+                                case PromptProgress():
+                                    pass  # only for the front end to display
+                            if on_event is not None:
+                                on_event(event)
+                    except LemonadeError as error:
+                        # The request was too long for the model's context window. Summarise the older messages
+                        # and ask again, once; the turn so far (your message and any tool results) is kept.
+                        streaming = False
+                        if overflow_retried or not is_context_overflow(error):
+                            raise
+                        overflow_retried = True
+                        reasoning, answer, calls, finished = [], [], (), None
+                        this_turn = self.history[turn_start:]
+                        if not await self._compact_if_needed(on_event, force=True):
+                            raise
+                        turn_start = len(self.history)
+                        self.history.extend(this_turn)
+                        continue
+                    break
                 streaming = False
 
                 round_text = "".join(answer).strip()
@@ -531,17 +552,25 @@ class Conversation:
         self._repo.add_tag(self.session.id, "image")
         self.session = self._repo.get_session(self.session.id)
 
-    async def _compact_if_needed(self, on_event: EventHandler | None) -> None:
-        """Summarise the oldest messages when the chat has filled enough of the context window.
+    async def _compact_if_needed(
+        self, on_event: EventHandler | None, *, force: bool = False
+    ) -> bool:
+        """Summarise the oldest messages when the chat has filled enough of the context window. True if it did.
 
         Runs at the start of a send, before anything is added to the history, so a failure here (the model
         could not summarise) just means "try again next time". The chat carries on uncompacted.
+
+        ``force=True`` skips the "is it full enough yet" test, for when the server has just said a request is too
+        long. A chat that has compaction switched off (0 percent) is never compacted, forced or not.
         """
-        limit = self.context_window
-        if not (self.compaction_percent and limit and self._context_tokens and self.session):
-            return
-        if self._context_tokens < limit * self.compaction_percent / 100:
-            return
+        if not self.compaction_percent or not self.session:
+            return False
+        if not force:
+            limit = self.context_window
+            if not (limit and self._context_tokens):
+                return False
+            if self._context_tokens < limit * self.compaction_percent / 100:
+                return False
 
         session = self.session
         stored = [
@@ -551,7 +580,7 @@ class Conversation:
         ]
         cut = split_for_compaction(stored, self.compaction_keep_turns)
         if cut is None:
-            return
+            return False
         folded, kept = stored[:cut], stored[cut:]
 
         if on_event is not None:
@@ -562,7 +591,7 @@ class Conversation:
             logger.warning("Could not summarise the conversation", exc_info=True)
             summary = ""
         if not summary:
-            return
+            return False
 
         self._repo.set_summary(session.id, summary, folded[-1].id)
         self.session = self._repo.get_session(session.id)
@@ -572,6 +601,7 @@ class Conversation:
         self._context_tokens = None  # unknown until the next reply reports it
         if on_event is not None:
             on_event(CompactionFinished(len(folded)))
+        return True
 
     def _request_messages(
         self, turn_start: int, text: str, background: str
