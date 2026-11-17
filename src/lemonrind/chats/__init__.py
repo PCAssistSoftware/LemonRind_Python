@@ -2,6 +2,7 @@
 
 from lemonrind.chats.conversation import (
     CONTINUE_PROMPT,
+    STEERING_PREFIX,
     ChatStreamer,
     CompactionFinished,
     CompactionStarted,
@@ -10,6 +11,7 @@ from lemonrind.chats.conversation import (
     Conversation,
     ConversationEvent,
     Reply,
+    SteeringApplied,
     ToolFinished,
     ToolRunner,
     ToolStarted,
@@ -29,6 +31,7 @@ from lemonrind.chats.text import (
 __all__ = [
     "CONTINUE_PROMPT",
     "DEFAULT_TITLE",
+    "STEERING_PREFIX",
     "ChatNotFoundError",
     "ChatRepository",
     "ChatSession",
@@ -42,6 +45,7 @@ __all__ = [
     "Folder",
     "Reply",
     "Role",
+    "SteeringApplied",
     "StoredMessage",
     "ToolFinished",
     "ToolRunner",

@@ -67,6 +67,13 @@ from lemonrind.modules.tool import ToolResult
 
 logger = logging.getLogger(__name__)
 
+# Put in front of a message the person sent while the assistant was still working, so the model treats it as a
+# change of plan rather than a new, unrelated question.
+STEERING_PREFIX = (
+    "The user sent this message while you were still working. "
+    "Take it into account and adjust your plan if it changes what you should do:\n\n"
+)
+
 
 @dataclass(frozen=True, slots=True)
 class ToolStarted:
@@ -93,6 +100,13 @@ class CompactionFinished:
 
 
 @dataclass(frozen=True, slots=True)
+class SteeringApplied:
+    """A message the person sent while the assistant was working has just been handed to it."""
+
+    text: str
+
+
+@dataclass(frozen=True, slots=True)
 class ContextUsed:
     """Modules added background text (for example recalled memories) to this message."""
 
@@ -101,7 +115,13 @@ class ContextUsed:
 
 # Everything ``send`` reports: the model's events, plus these about tools and added context.
 type ConversationEvent = (
-    ChatEvent | ToolStarted | ToolFinished | ContextUsed | CompactionStarted | CompactionFinished
+    ChatEvent
+    | ToolStarted
+    | ToolFinished
+    | ContextUsed
+    | CompactionStarted
+    | CompactionFinished
+    | SteeringApplied
 )
 type EventHandler = Callable[[ConversationEvent], None]
 # Asked before a tool that needs permission runs; True lets it run. The front end shows the question.
@@ -249,6 +269,10 @@ class Conversation:
         # An upper limit on one reply's length (None = the server's own default). Unattended runs set one so a
         # model stuck in a loop cannot generate until the job times out.
         self.max_output_tokens: int | None = None
+        # Messages sent while a reply is being worked on. They are handed over at the next step (after a round of
+        # tool calls); whatever is still waiting when the reply ends is for the front end to send as a new message.
+        self._steering: list[str] = []
+        self._applied_steering: list[str] = []
         # When on, every message is sent with the current date and time added (volatile text goes in the message, not the
         # system prompt, so the server's cache of the prompt stays valid). The front ends switch it on.
         self.time_awareness = False
@@ -411,6 +435,7 @@ class Conversation:
                 ContextUsed(modules_added)
             )  # only what modules added: the time line would be noise on every turn
 
+        self._applied_steering = []
         turn_start = len(self.history)  # on failure, everything after this point is thrown away
         self.history.append({"role": "user", "content": wire_content(text, attachment)})
         pending = [_Pending("user", stored_text(text, attachment))]
@@ -517,6 +542,17 @@ class Conversation:
                             tool_failed=result.is_error,
                         )
                     )
+                # A message sent while the tools ran goes to the model now, before its next request.
+                if self._steering:
+                    notes, self._steering = self._steering, []
+                    steering_text = "\n\n".join(notes)
+                    self.history.append(
+                        {"role": "user", "content": STEERING_PREFIX + steering_text}
+                    )
+                    pending.append(_Pending("user", steering_text))
+                    self._applied_steering.extend(notes)
+                    if on_event is not None:
+                        on_event(SteeringApplied(steering_text))
         except asyncio.CancelledError:
             partial = "".join(answer).strip() if streaming else ""
             if partial:
@@ -539,6 +575,28 @@ class Conversation:
         else:
             del self.history[turn_start:]
         return reply
+
+    # --- messages sent while a reply is being worked on -----------------------------------------------------
+
+    @property
+    def pending_steering(self) -> tuple[str, ...]:
+        """Messages waiting to be handed to the model (or, once the reply ends, to be sent as a new message)."""
+        return tuple(self._steering)
+
+    def queue_steering(self, text: str) -> None:
+        """Hold a message sent while a reply is running; the model sees it at its next step."""
+        if text.strip():
+            self._steering.append(text.strip())
+
+    def cancel_steering(self) -> list[str]:
+        """Take back every message still waiting, so the front end can send or restore them."""
+        waiting, self._steering = self._steering, []
+        return waiting
+
+    def take_applied_steering(self) -> list[str]:
+        """The messages the model was given during the last reply (they are already saved with it)."""
+        applied, self._applied_steering = self._applied_steering, []
+        return applied
 
     def record_drawing(self, prompt: str, markdown: str) -> None:
         """Save a picture drawn straight from an image model as an exchange: your description, then the picture.

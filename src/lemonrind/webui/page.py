@@ -40,6 +40,7 @@ from lemonrind.chats import (
     ChatSession,
     Conversation,
     Reply,
+    SteeringApplied,
     StoredMessage,
     ToolFinished,
     ToolStarted,
@@ -132,6 +133,9 @@ class ChatPage:
         self._context_windows: dict[str, int] = {}
         self._healthy = False
         self._busy = False
+        self._delivered_note: str | None = (
+            None  # a queued message the assistant has just been given
+        )
         self._picker_followed = (
             False  # the picker is showing a watched scheduled run's model (read-only)
         )
@@ -320,6 +324,16 @@ class ChatPage:
             self.attach_row.set_visibility(False)
             self.attach_note = ui.label().classes("w-full text-caption text-negative q-px-md")
             self.attach_note.set_visibility(False)
+            # A message typed while the assistant is still working: shown here until it is handed over.
+            self.queued_row = ui.row().classes("w-full items-center no-wrap gap-2 q-px-md q-pt-xs")
+            self.queued_row.set_visibility(False)
+            self.queued_row.mark("queued-row")
+            with self.queued_row:
+                ui.icon("schedule_send", size="xs").props("color=grey")
+                self.queued_label = ui.label().classes("text-caption lr-muted ellipsis flex-grow")
+                ui.button(icon="close", on_click=self._cancel_queued).props(
+                    "flat round dense size=sm"
+                ).tooltip("Do not send this").mark("queued-cancel")
             with ui.row().classes("w-full items-end no-wrap q-px-sm q-pt-xs"):
                 self.upload = (
                     ui.upload(
@@ -356,7 +370,7 @@ class ChatPage:
                     .mark("message-input")
                 )
                 # Enter sends; Shift+Enter (and the other modifier keys) still insert a new line.
-                self.input.on("keydown.enter.exact.prevent", self._send_clicked)
+                self.input.on("keydown.enter.exact.prevent", self._enter_pressed)
                 self.send_button = ui.button(icon="arrow_upward", on_click=self._send_clicked)
                 self.send_button.props("round color=primary").mark("send")
                 self.send_button.tooltip("Send (Enter)")
@@ -837,6 +851,61 @@ class ChatPage:
 
     # --- sending -------------------------------------------------------------------------------------------------
 
+    async def _enter_pressed(self) -> None:
+        """Enter sends; while a reply is being worked on it queues the message instead (and never stops the reply)."""
+        if not self._busy:
+            await self._send_clicked()
+            return
+        text = (self.input.value or "").strip()
+        if not text:
+            return
+        self.conversation.queue_steering(text)
+        self.input.value = ""
+        self._delivered_note = None
+        self._render_queued()
+
+    def _cancel_queued(self) -> None:
+        """The cross on the strip: take back the waiting messages and put them in the box again."""
+        waiting = self.conversation.cancel_steering()
+        if waiting:
+            draft = (self.input.value or "").strip()
+            self.input.value = "\n\n".join([*waiting, *([draft] if draft else [])])
+        self._render_queued()
+
+    def _render_queued(self) -> None:
+        waiting = self.conversation.pending_steering
+        if self._delivered_note is not None:
+            self.queued_label.text = f"Handed to the assistant: {self._delivered_note}"
+        elif waiting:
+            self.queued_label.text = (
+                f"Queued, goes to the assistant at its next step: {' / '.join(waiting)}"
+            )
+        self.queued_row.set_visibility(bool(waiting) or self._delivered_note is not None)
+
+    async def _after_turn(self, completed: bool, text: str) -> None:
+        """Deal with messages typed while the reply ran: show the ones the assistant was given, send the rest."""
+        applied = self.conversation.take_applied_steering()
+        unsent = self.conversation.cancel_steering()
+        self._delivered_note = None
+        self._render_queued()
+        kept = completed or self._exchange_saved(text)
+        if applied and kept:
+            with self.messages:
+                now = datetime.now(UTC)
+                for note in applied:
+                    add_user_message(note, now, view_for(note, None))
+        else:
+            unsent = [*applied, *unsent]  # the turn did not keep them: nothing is lost
+        if not unsent:
+            return
+        draft = (self.input.value or "").strip()
+        waiting = "\n\n".join(unsent)
+        if completed and not draft:
+            self.input.value = waiting
+            await self._send_clicked()  # goes through the usual checks (model, picture, drawing)
+        else:  # stopped, failed or you are already typing: put it back for you to send when ready
+            self.input.value = "\n\n".join([waiting, *([draft] if draft else [])])
+
     async def _send_clicked(self) -> None:
         """The send button doubles as the Stop button while a reply is streaming."""
         if self._busy:
@@ -889,6 +958,9 @@ class ChatPage:
                 bubble.on_event(event)
                 if isinstance(event, ToolStarted | ToolFinished):
                     self.stats_panel.set_tool_calls(bubble.tool_chips())
+                elif isinstance(event, SteeringApplied):
+                    self._delivered_note = event.text
+                    self._render_queued()
 
             # Read afresh each time, so a change in Settings applies to the very next message.
             self.conversation.max_output_tokens = self.context.settings.assistant.max_reply_tokens
@@ -896,6 +968,7 @@ class ChatPage:
                 return await self.conversation.send(text, on_event, attachment=attachment)
 
         self._task = asyncio.create_task(run())
+        completed = False
         try:
             reply = await self._task
         except asyncio.CancelledError:
@@ -924,6 +997,7 @@ class ChatPage:
             ):  # one entry per request (tools: several)
                 self.totals.add(stats)
             self._set_last_stats(reply.stats)
+            completed = True
         finally:
             self._task = None
             self._set_busy(False)
@@ -931,6 +1005,7 @@ class ChatPage:
             self._update_title()
             self.chat_list.render.refresh()
             self.input.run_method("focus")
+        await self._after_turn(completed, text)
 
     async def _draw(self, prompt: str) -> None:
         """Draw a picture from ``prompt`` with the image model picked in the list, and save it as an exchange."""
@@ -968,6 +1043,7 @@ class ChatPage:
             images.draw(prompt, model=model, width=size[0], height=size[1])
         )
         started = time.monotonic()
+        completed = False
         try:
             while not self._task.done():
                 bubble.show_progress(f"Drawing with {model}... {int(time.monotonic() - started)}s")
@@ -985,12 +1061,14 @@ class ChatPage:
         else:
             bubble.show_text(drawn.markdown)
             self.conversation.record_drawing(prompt, drawn.markdown)
+            completed = True
         finally:
             self._task = None
             self._set_busy(False)
             self._update_title()
             self.chat_list.render.refresh()
             self.input.run_method("focus")
+        await self._after_turn(completed, prompt)
 
     def _exchange_saved(self, text: str) -> bool:
         """Was the message just sent written to the current chat? (A stopped reply is only kept if some answer arrived.)"""
@@ -1002,10 +1080,12 @@ class ChatPage:
         if busy:
             self.send_button.props("icon=stop color=negative")
             self.send_button.tooltip("Stop")
+            self.input.props('placeholder="Type to queue a message for the assistant (Enter)"')
             self.model_select.disable()
         else:
             self.send_button.props("icon=arrow_upward color=primary")
             self.send_button.tooltip("Send (Enter)")
+            self.input.props('placeholder="Type a message..."')
             self.model_select.enable()
         self._update_attach_state()
 

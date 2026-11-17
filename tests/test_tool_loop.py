@@ -8,7 +8,7 @@ from collections.abc import AsyncIterator
 
 import pytest
 
-from lemonrind.chats import ChatRepository, Conversation
+from lemonrind.chats import STEERING_PREFIX, ChatRepository, Conversation, SteeringApplied
 from lemonrind.lemonade import (
     ChatEvent,
     Finished,
@@ -384,3 +384,59 @@ async def test_an_ordinary_tool_or_no_tool_leaves_a_chat_untagged_and_a_chat_can
     conversation, repo = make(both, OriginTools())
     await conversation.send("do both")
     assert set(repo.list_sessions()[0].tags) == {"coder", "image"}
+
+
+# --- a message sent while the assistant is working ---------------------------------------------------------------
+
+
+class QueueingTools(FakeTools):
+    """Queues the person's message while its tool runs, as if they had typed it meanwhile."""
+
+    def __init__(self, conversation_holder: list[Conversation], message: str) -> None:
+        super().__init__()
+        self._holder = conversation_holder
+        self._message = message
+
+    async def run(self, call: ToolCall) -> ToolResult:
+        self._holder[0].queue_steering(self._message)
+        return await super().run(call)
+
+
+async def test_a_message_sent_during_a_tool_step_reaches_the_model_at_the_next_request():
+    streamer = RoundsStreamer(tool_round(), answer_round("Otters only, got it."))
+    holder: list[Conversation] = []
+    conversation, repo = make(streamer, QueueingTools(holder, "Only river otters, please"))
+    holder.append(conversation)
+    seen: list = []
+
+    reply = await conversation.send("Tell me about otters", seen.append)
+
+    assert reply.text == "Otters only, got it."
+    last = streamer.requests[1][-1]
+    assert last["role"] == "user"
+    assert last["content"].startswith(STEERING_PREFIX)
+    assert last["content"].endswith("Only river otters, please")
+    assert [e for e in seen if isinstance(e, SteeringApplied)] == [
+        SteeringApplied("Only river otters, please")
+    ]
+    assert conversation.take_applied_steering() == ["Only river otters, please"]
+    # saved as an ordinary message of the turn, without the framing, between the tool step and the answer
+    saved = [(m.role, m.content) for m in repo.list_messages(conversation.session.id)]  # type: ignore[union-attr]
+    assert ("user", "Only river otters, please") in saved
+    assert saved.index(("user", "Only river otters, please")) > saved.index(("tool", SEARCH_RESULT))
+
+
+async def test_a_message_still_waiting_when_the_reply_ends_is_left_for_the_front_end():
+    streamer = RoundsStreamer(answer_round("Hello."))
+    conversation, _ = make(streamer)
+    conversation.queue_steering("  one more thing  ")
+    conversation.queue_steering("   ")  # blank: ignored
+
+    await conversation.send("Hi")
+
+    assert conversation.pending_steering == (
+        "one more thing",
+    )  # no tool step, so nothing was handed over
+    assert conversation.take_applied_steering() == []
+    assert conversation.cancel_steering() == ["one more thing"]
+    assert conversation.pending_steering == ()
