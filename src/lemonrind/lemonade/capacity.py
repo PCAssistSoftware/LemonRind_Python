@@ -63,9 +63,15 @@ def assess_fit(size_gb: float | None, stats: SystemStats | None, ram_gb: float |
     share = size_gb / capacity
     summary = f"{size_gb:.1f} GB of {capacity:.0f} GB of {where} ({share:.0%})"
     if share <= COMFORTABLE_SHARE:
-        return MemoryFit("fits", f"Fits: {summary}.")
+        return MemoryFit(
+            "fits",
+            f"Fits: {summary}. That is the model file alone: the context (KV cache) and working space need more.",
+        )
     if share <= 1.0:
-        return MemoryFit("tight", f"Tight: {summary}. Little room is left for a long context.")
+        return MemoryFit(
+            "tight",
+            f"Tight: {summary}. That is the model file alone, and the context (KV cache) and working space need more, so there is little room.",
+        )
     return MemoryFit(
         "too_big", f"Too big: {summary}. It could only run partly from slower memory, if at all."
     )
