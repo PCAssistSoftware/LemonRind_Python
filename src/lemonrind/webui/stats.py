@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 
 from nicegui import ui
 
+from lemonrind.lemonade.client import LemonadeError
 from lemonrind.lemonade.events import RequestStats
+from lemonrind.lemonade.models import SystemStats
 from lemonrind.modules.base import Module
 from lemonrind.webui.bubbles import ToolChip
 
@@ -97,6 +99,23 @@ def _chip_tooltip(group: ChipGroup) -> str:
     return f"{title} ({group.count} calls)" if group.count > 1 else title
 
 
+SERVER_POLL_SECONDS = 3.0
+
+
+def _percent_text(value: float | None) -> str:
+    return "n/a" if value is None else f"{value:.0f}%"
+
+
+def _meter(label: str, percent: float | None, text: str) -> None:
+    """A label with its figure on the right and a thin bar under it."""
+    with ui.row().classes("w-full items-center justify-between no-wrap"):
+        ui.label(label).classes("text-caption")
+        ui.label(text).classes("text-caption lr-muted")
+    ui.linear_progress(
+        value=min(max((percent or 0.0) / 100, 0.0), 1.0), show_value=False, size="6px"
+    ).classes("w-full")
+
+
 class StatsPanel:
     """The right-hand panel: two tabs, Stats (numbers and tool calls) and Modules (what is on and what is off).
 
@@ -107,9 +126,14 @@ class StatsPanel:
         self,
         modules: Callable[[], Sequence[Module]] = lambda: (),
         on_tab_change: Callable[[str], None] | None = None,
+        server_stats: Callable[[], Awaitable[SystemStats]] | None = None,
     ) -> None:
         self._modules = modules
         self._on_tab_change = on_tab_change
+        self._server_stats = server_stats
+        self._server: SystemStats | None = (
+            None  # the latest reading; None until one arrives or if Lemonade has none
+        )
         self._last: RequestStats | None = None
         self._totals = SessionTotals()
         self._chips: list[ToolChip] = []
@@ -128,6 +152,20 @@ class StatsPanel:
                 )
         self._style_tabs()
         self.render()
+        if self._server_stats is not None:
+            ui.timer(SERVER_POLL_SECONDS, self._poll_server)
+
+    async def _poll_server(self) -> None:
+        """Ask Lemonade how busy its machine is, only while the Stats tab is showing."""
+        if self._server_stats is None or self.tab != "stats":
+            return
+        try:
+            self._server = await self._server_stats()
+        except LemonadeError:
+            self._server = (
+                None  # an older Lemonade without the endpoint, or not reachable: the card hides
+            )
+        self.server_card.refresh()
 
     def _style_tabs(self) -> None:
         """The open tab is a filled button with white text; the other is a plain one.
@@ -169,7 +207,36 @@ class StatsPanel:
         else:
             self._render_stats()
 
+    @ui.refreshable
+    def server_card(self) -> None:
+        stats = self._server
+        if stats is None:
+            return
+        with ui.card().props("flat bordered").classes("w-full").mark("server-card"):
+            ui.label("Lemonade server").classes("text-weight-medium")
+            gpu = stats.primary_gpu
+            _meter("Processor", stats.cpu_percent, _percent_text(stats.cpu_percent))
+            graphics = stats.gpu_percent
+            if graphics is None and gpu is not None:
+                graphics = gpu.gpu_percent
+            _meter("Graphics", graphics, _percent_text(graphics))
+            if stats.npu_percent is not None:
+                _meter("NPU", stats.npu_percent, _percent_text(stats.npu_percent))
+            if gpu is not None and gpu.memory_total_gb:
+                used = gpu.memory_used_gb or 0.0
+                shared = " (shared)" if gpu.memory_type == "shared" else ""
+                _meter(
+                    f"Graphics memory{shared}",
+                    100 * used / gpu.memory_total_gb,
+                    f"{used:.1f} / {gpu.memory_total_gb:.0f} GB",
+                )
+            if stats.memory_gb is not None:
+                ui.label(f"Main memory in use: {stats.memory_gb:.1f} GB").classes(
+                    "text-caption lr-muted"
+                )
+
     def _render_stats(self) -> None:
+        self.server_card()
         last = self._last
         with ui.card().props("flat bordered").classes("w-full"):
             ui.label("Last reply").classes("text-weight-medium")

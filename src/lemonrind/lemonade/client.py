@@ -45,7 +45,7 @@ from lemonrind.lemonade.events import (
     ToolCall,
     ToolCallsRequested,
 )
-from lemonrind.lemonade.models import Health, ModelInfo
+from lemonrind.lemonade.models import Health, ModelInfo, SystemStats
 
 
 def is_context_overflow(error: Exception) -> bool:
@@ -259,6 +259,14 @@ class LemonadeClient:
 
     async def health(self) -> Health:
         return Health.model_validate(await self._get_json("health"))
+
+    async def system_stats(self) -> SystemStats:
+        """How busy the server's machine is right now (processor, graphics, memory, NPU)."""
+        return SystemStats.model_validate(await self._get_json("system-stats"))
+
+    async def system_info(self) -> dict[str, Any]:
+        """What the server's machine is: processor, memory, graphics. Large, so ask only when it is needed."""
+        return await self._get_json("system-info")
 
     async def list_models(self, *, downloaded_only: bool = True) -> list[ModelInfo]:
         data = await self._get_json("models")

@@ -61,6 +61,36 @@ class Health(BaseModel):
         return self.status == "ok"
 
 
+class GpuStats(BaseModel):
+    """One graphics chip in GET /system-stats."""
+
+    id: str | None = None
+    name: str = ""
+    gpu_percent: float | None = None
+    memory_total_gb: float | None = None
+    memory_used_gb: float | None = None
+    memory_type: str | None = None  # "shared" when the chip uses the computer's main memory
+
+
+class SystemStats(BaseModel):
+    """GET /system-stats: how busy the machine Lemonade runs on is right now. Any figure can be missing."""
+
+    cpu_percent: float | None = None
+    gpu_percent: float | None = None
+    npu_percent: float | None = None
+    memory_gb: float | None = None  # main memory in use
+    primary_gpu_id: str | None = None
+    gpus: list[GpuStats] = Field(default_factory=list)
+
+    @property
+    def primary_gpu(self) -> GpuStats | None:
+        """The graphics chip Lemonade reports as its main one (else the first)."""
+        for gpu in self.gpus:
+            if gpu.id is not None and gpu.id == self.primary_gpu_id:
+                return gpu
+        return self.gpus[0] if self.gpus else None
+
+
 class ModelInfo(BaseModel):
     """One entry from GET /models."""
 

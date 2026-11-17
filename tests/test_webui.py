@@ -29,7 +29,7 @@ from lemonrind.lemonade import (
 )
 from lemonrind.lemonade.client import LemonadeError
 from lemonrind.lemonade.events import RequestStats
-from lemonrind.lemonade.models import Health, LoadedModel, ModelInfo
+from lemonrind.lemonade.models import GpuStats, Health, LoadedModel, ModelInfo, SystemStats
 from lemonrind.modules import build_registry
 from lemonrind.storage import Database
 from lemonrind.webui.context import AppContext, set_context
@@ -56,9 +56,25 @@ class FakeLemonade:
 
     async def list_models(self, *, downloaded_only: bool = True) -> list[ModelInfo]:
         return [
-            ModelInfo(id="Fake-Chat", labels=["chat"], downloaded=True, context_length=8000),
+            ModelInfo(
+                id="Fake-Chat", labels=["chat"], downloaded=True, context_length=8000, size=5.0
+            ),
             ModelInfo(id="Fake-Embed", labels=["embeddings"], downloaded=True),
         ]
+
+    async def system_stats(self) -> SystemStats:
+        return SystemStats(
+            cpu_percent=12.0,
+            gpu_percent=40.0,
+            memory_gb=30.0,
+            primary_gpu_id="g0",
+            gpus=[
+                GpuStats(id="g0", memory_total_gb=100.0, memory_used_gb=25.0, memory_type="shared")
+            ],
+        )
+
+    async def system_info(self) -> dict:
+        return {"Physical Memory": "128.00 GB"}
 
     async def load_model(self, name: str) -> None:
         pass

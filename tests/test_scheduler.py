@@ -15,7 +15,7 @@ from lemonrind.config import Settings
 from lemonrind.lemonade import ChatEvent, Finished, TextDelta, ToolCall, ToolCallsRequested
 from lemonrind.lemonade.client import LemonadeError
 from lemonrind.lemonade.events import RequestStats
-from lemonrind.lemonade.models import Health, LoadedModel, ModelInfo
+from lemonrind.lemonade.models import Health, LoadedModel, ModelInfo, SystemStats
 from lemonrind.modules import Module, ModuleRegistry, Tool
 from lemonrind.modules.scheduler import (
     CronError,
@@ -688,6 +688,9 @@ class FakeLemonade:
 
     async def list_models(self, **kwargs) -> list[ModelInfo]:
         return [ModelInfo(id="Chat", labels=["chat"], downloaded=True)]
+
+    async def system_stats(self) -> SystemStats:
+        return SystemStats()
 
     async def stream_chat(
         self, messages, model, *, tools=None, max_tokens=None

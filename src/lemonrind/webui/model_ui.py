@@ -27,8 +27,9 @@ from dataclasses import dataclass
 from nicegui import ui
 
 from lemonrind.chats import Conversation
+from lemonrind.lemonade.capacity import MemoryFit, assess_fit, physical_memory_gb
 from lemonrind.lemonade.client import LemonadeClient, LemonadeError
-from lemonrind.lemonade.models import Health, LoadedModel, ModelInfo
+from lemonrind.lemonade.models import Health, LoadedModel, ModelInfo, SystemStats
 from lemonrind.webui.inspectors import make_dialog
 
 GROUPS = (
@@ -101,6 +102,33 @@ def _row(label: str, value: str, *, mono: bool = False) -> None:
     ui.label(value).classes("lr-tool-text" if mono else "")
 
 
+FIT_COLOURS = {
+    "fits": "text-positive",
+    "tight": "lr-warn",
+    "too_big": "text-negative",
+    "unknown": "lr-muted",
+}
+
+
+async def _memory_fit(client: LemonadeClient, model: ModelInfo | None) -> MemoryFit | None:
+    """Whether the model's file fits the server's memory; None when there is no catalog entry to judge."""
+    if model is None:
+        return None
+    try:
+        stats: SystemStats | None = await client.system_stats()
+    except LemonadeError:
+        stats = None
+    ram: float | None = None
+    if (
+        stats is None or stats.primary_gpu is None
+    ):  # no graphics chip reported: main memory is the limit
+        try:
+            ram = physical_memory_gb(await client.system_info())
+        except LemonadeError:
+            ram = None
+    return assess_fit(model.size, stats, ram)
+
+
 def _loaded(health: Health | None, name: str) -> LoadedModel | None:
     if health is None:
         return None
@@ -117,6 +145,7 @@ async def show_model_details(
     except LemonadeError:
         health = None
     live = _loaded(health, name)
+    fit = await _memory_fit(client, catalog)
 
     dialog, card = make_dialog(name or "Model details", "")
     with card:
@@ -135,6 +164,9 @@ async def show_model_details(
                     "Size on disk",
                     f"{catalog.size:.2f} GB" if catalog.size is not None else "(unknown)",
                 )
+                if fit is not None:
+                    ui.label("Fits in memory").classes("text-caption lr-muted")
+                    ui.label(fit.message).classes(FIT_COLOURS[fit.verdict]).mark("model-fit")
                 _row("Backend", catalog.recipe or "(unknown)")
                 _row("Comes from", catalog.source or "(unknown)")
                 if catalog.checkpoint:

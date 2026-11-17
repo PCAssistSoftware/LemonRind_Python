@@ -115,6 +115,10 @@ async def test_the_info_button_shows_catalog_and_live_details_and_every_model(
     await user.should_see("Fake-Chat")
     await user.should_see("Largest context window")
     await user.should_see("8,000 tokens")
+    await user.should_see("Fits in memory")
+    await user.should_see(
+        "Fits: 5.0 GB of 100 GB of graphics memory (shared with the main memory) (5%)."
+    )
     await user.should_see("Currently loaded (live)")
     await user.should_see("All models on this server (2)")
 
@@ -133,6 +137,15 @@ async def test_the_info_button_says_so_when_the_model_is_not_loaded(
     user.find(marker="model-info").click()
 
     await user.should_see("Not currently loaded.")
+
+
+async def test_the_server_card_shows_how_busy_lemonades_machine_is(user: User, web: AppContext):
+    await user.open("/")
+
+    await user.should_see("Lemonade server", retries=40)
+    await user.should_see("12%")  # processor
+    await user.should_see("25.0 / 100 GB")  # graphics memory
+    await user.should_see("Main memory in use: 30.0 GB")
 
 
 # --- the meter and the breakdown -------------------------------------------------------------------------------------

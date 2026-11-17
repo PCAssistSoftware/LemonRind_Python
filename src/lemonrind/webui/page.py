@@ -118,6 +118,7 @@ class ChatPage:
         self.stats_panel = StatsPanel(
             modules=lambda: context.modules.modules if context.modules else (),
             on_tab_change=self._stats_tab_changed,
+            server_stats=context.client.system_stats,
         )
         self.totals = SessionTotals()
         self._last_stats: RequestStats | None = None
