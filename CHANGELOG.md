@@ -2,6 +2,12 @@
 
 What changed in each version of the Python edition, newest first. Each entry is dated, and a change is added here when it is pushed.
 
+## 0.2.19 - 17-11-2026
+
+### Added
+
+- **A plan for long jobs.** A new **Plan** module (on by default, listed under Settings > Modules) gives the assistant an `update_plan` tool: a short checklist it writes at the start of a job with several steps and ticks off as it goes. The Stats panel shows it live (done, now, still to do). Scheduled jobs are told to write a plan first when they have three or more steps, and a job is held to it: if the model tries to give its final answer with steps of its own plan still open, it is sent back to them (up to three times). A job that still ends with steps open is marked **incomplete**, with a note saying which steps, instead of "ok". A model that only keeps editing its plan for eight rounds in a row has its tools withheld so it has to answer. Ordinary chats are not held to the plan, and only offer the tool for tasks with real steps.
+
 ## 0.2.18 - 17-11-2026
 
 ### Added
@@ -12,7 +18,6 @@ What changed in each version of the Python edition, newest first. Each entry is 
 
 - **Type while the assistant is working.** Pressing Enter while a reply is being worked on now queues your message instead of stopping the reply (the Stop button still stops it). A strip above the box shows what is waiting, with a cross to take it back. If the assistant is using tools, it is given your message at its next step and told to adjust its plan; if not, the message is sent by itself as soon as the reply ends. If you stop the reply, or it fails, the waiting message is put back in the box.
 
-- **A plan for long jobs.** A new **Plan** module (on by default, listed under Settings > Modules) gives the assistant an `update_plan` tool: a short checklist it writes at the start of a job with several steps and ticks off as it goes. The Stats panel shows it live (done, now, still to do). Scheduled jobs are told to write a plan first when they have three or more steps, and a job is held to it: if the model tries to give its final answer with steps of its own plan still open, it is sent back to them (up to three times). A job that still ends with steps open is marked **incomplete**, with a note saying which steps, instead of "ok". A model that only keeps editing its plan for eight rounds in a row has its tools withheld so it has to answer. Ordinary chats are not held to the plan, and only offer the tool for tasks with real steps.
 
 ### Changed
 
