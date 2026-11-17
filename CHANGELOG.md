@@ -2,6 +2,18 @@
 
 What changed in each version of the Python edition, newest first. Each entry is dated, and a change is added here when it is pushed.
 
+## 0.2.18 - 17-11-2026
+
+### Added
+
+- **Lemonade's own tools in one click.** The MCP servers screen has a new **Add Lemonade's tools** button (and the terminal has `/mcp lemonade`). It adds the tools the Lemonade server offers itself: speech to text (Whisper), picture drawing, listing its models and asking them. The address is worked out from the one chat already uses, and the same key is sent if you set one. They ask before running, like any new server.
+- **How busy Lemonade's machine is.** The Stats panel has a new **Lemonade server** card at the top: processor, graphics and NPU use, graphics memory and main memory in use, refreshed every few seconds while the Stats tab is open. It hides itself if the server does not offer the figures.
+- **Does a model fit?** Model details has a new **Fits in memory** line. It compares the model's file size with the graphics memory (or main memory when there is no graphics chip) and says fits, tight or too big. It counts the model file only, not the extra room a long conversation needs.
+
+### Changed
+
+- **A request that is too long is summarised and sent again.** When Lemonade refuses a chat request because it is longer than the context window, the older messages are folded into a summary and the request is sent once more, instead of just reporting the error. If that does not help, or compaction is switched off, you see the error as before.
+
 ## 0.2.17 - 10-11-2026
 
 ### Added
