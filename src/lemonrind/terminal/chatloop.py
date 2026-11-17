@@ -52,6 +52,7 @@ from lemonrind.modules.mcp import (
     DuplicateServerError,
     ServerImportError,
     from_command_line,
+    lemonade_gateway,
     parse_servers,
 )
 from lemonrind.modules.memory import Memory
@@ -88,6 +89,7 @@ HELP_TEXT = """[bold]Chats[/bold]
 [bold]MCP servers (tools from other programs)[/bold]
   [cyan]/mcp[/cyan]              list servers, whether they are connected, and their tools
   [cyan]/mcp add NAME COMMAND [ARGS][/cyan]   add a server started by a command, e.g. npx -y some-server
+  [cyan]/mcp lemonade[/cyan]      add Lemonade's own tools (speech to text, picture drawing, ...)
   [cyan]/mcp import JSON|FILE[/cyan]  add servers from pasted MCP JSON (one line) or a .json file
   [cyan]/mcp on|off|restart|remove NAME[/cyan]   manage one server (changes apply immediately)
   [cyan]/mcp ask NAME on|off[/cyan]  ask before running its tools (on by default)
@@ -541,6 +543,14 @@ class ChatLoop:
                 self.console.print(f"[red]{error}[/red]")
                 return
             await self._mcp_connect_and_show(module)
+        elif action == "lemonade":
+            lemonade = self.settings.lemonade
+            try:
+                await module.add_servers([lemonade_gateway(lemonade.base_url, lemonade.api_key)])
+            except (ServerImportError, DuplicateServerError) as error:
+                self.console.print(f"[red]{error}[/red]")
+                return
+            await self._mcp_connect_and_show(module)
         elif action == "import":
             text = rest
             if rest.lower().endswith(".json") and Path(rest.strip('"')).expanduser().is_file():
@@ -555,7 +565,7 @@ class ChatLoop:
             await self._mcp_manage(module, action, rest)
         else:
             self.console.print(
-                "Usage: /mcp [add|import|on|off|restart|remove|ask] ...  (see /help)"
+                "Usage: /mcp [add|lemonade|import|on|off|restart|remove|ask] ...  (see /help)"
             )
 
     async def _mcp_manage(self, module: McpModule, action: str, rest: str) -> None:

@@ -33,6 +33,7 @@ import json
 import re
 import shlex
 from typing import Any
+from urllib.parse import urlsplit
 
 from lemonrind.modules.mcp.repository import ServerDefinition
 
@@ -130,6 +131,29 @@ def from_command_line(name: str, command_line: str) -> ServerDefinition:
         raise ServerImportError("Give the command that starts the server.")
     return ServerDefinition(
         name=_clean_name(name), transport="stdio", command=parts[0], args=tuple(parts[1:])
+    )
+
+
+LEMONADE_SERVER_NAME = "lemonade"
+
+
+def lemonade_gateway(base_url: str, api_key: str = "") -> ServerDefinition:
+    """The MCP address Lemonade itself serves, worked out from the address chat is already using.
+
+    Lemonade answers MCP at ``/mcp`` on the same host and port as its chat address (which ends in ``/v1/``),
+    and offers speech to text, picture drawing and a few model tools. If chat uses a key, the same key is sent.
+    """
+    parts = urlsplit(base_url)
+    if not parts.scheme or not parts.netloc:
+        raise ServerImportError(
+            f"'{base_url}' is not a web address, so Lemonade's tools cannot be found."
+        )
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    return ServerDefinition(
+        name=LEMONADE_SERVER_NAME,
+        transport="http",
+        url=f"{parts.scheme}://{parts.netloc}/mcp",
+        headers=headers,
     )
 
 

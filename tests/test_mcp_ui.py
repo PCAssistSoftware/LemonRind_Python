@@ -165,6 +165,31 @@ async def test_the_web_screen_adds_a_server_from_pasted_json(user: User, tmp_pat
         set_context(None)
 
 
+async def test_the_web_screen_adds_lemonades_own_tools_once(user: User, tmp_path: Path):
+    context = make_context(tmp_path, FakeLemonade())
+    module = mcp_module(context.modules)  # type: ignore[arg-type]
+    set_context(context)
+    register_pages()
+    try:
+        await user.open("/")
+        await open_section(user, "mcp")
+        await user.should_see("Lemonade's own tools")
+        user.find(marker="mcp-add-lemonade").click()
+        await user.should_see("Added Lemonade's tools")
+
+        (added,) = [s.config for s in module.statuses()]
+        assert (added.name, added.transport) == ("lemonade", "http")
+        assert added.url.endswith("/mcp")
+        assert "/v1" not in added.url
+
+        user.find(marker="mcp-add-lemonade").click()
+        await user.should_see("already exists")
+        assert len(module.statuses()) == 1
+    finally:
+        await module.on_shutdown()
+        set_context(None)
+
+
 async def test_the_web_screen_explains_bad_json(user: User, tmp_path: Path):
     context = make_context(tmp_path, FakeLemonade())
     set_context(context)

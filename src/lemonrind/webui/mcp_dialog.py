@@ -21,6 +21,7 @@ from lemonrind.modules.mcp import (
     McpModule,
     ServerImportError,
     ServerStatus,
+    lemonade_gateway,
     parse_servers,
 )
 from lemonrind.webui.dialogs import ask_confirm
@@ -105,6 +106,16 @@ def build_mcp(module: McpModule) -> None:
         ui.notify(f"Added {len(added)} server(s). They ask before running tools.", type="positive")
         servers.refresh()
 
+    async def add_lemonade() -> None:
+        lemonade = module.settings.lemonade
+        try:
+            await module.add_servers([lemonade_gateway(lemonade.base_url, lemonade.api_key)])
+        except (ServerImportError, DuplicateServerError) as error:
+            ui.notify(str(error), type="negative", multi_line=True)
+            return
+        ui.notify("Added Lemonade's tools. They ask before running.", type="positive")
+        servers.refresh()
+
     was_connecting = False
 
     def poll() -> None:
@@ -120,6 +131,16 @@ def build_mcp(module: McpModule) -> None:
             "MCP servers give the assistant extra tools: email, files, databases, calendars and more. "
             "Only add servers you trust: their tools can act on your behalf."
         ).classes("text-caption lr-muted")
+        ui.label("Lemonade's own tools").classes("text-weight-medium")
+        ui.label(
+            "The Lemonade server you are connected to offers tools of its own: speech to text "
+            "(Whisper), picture drawing and asking its other models. One click adds them. Some of "
+            "them load other models, which can swap the one that is loaded."
+        ).classes("text-caption lr-muted")
+        ui.button("Add Lemonade's tools", on_click=add_lemonade).props("outline").mark(
+            "mcp-add-lemonade"
+        )
+        ui.separator()
         ui.label("Add servers").classes("text-weight-medium")
         ui.label(
             'Paste the JSON from the server\'s documentation (the "mcpServers" block). Example:'

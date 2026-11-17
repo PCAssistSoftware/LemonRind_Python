@@ -33,6 +33,7 @@ from lemonrind.modules.mcp import (
     ServerDefinition,
     ServerImportError,
     from_command_line,
+    lemonade_gateway,
     parse_servers,
 )
 from lemonrind.modules.mcp.connection import McpConnection, describe_error, result_to_tool_result
@@ -57,6 +58,24 @@ def make_module(tmp_path: Path | None = None) -> McpModule:
 
 
 # --- importing server definitions ----------------------------------------------------------------------------
+
+
+def test_lemonades_own_tools_are_found_next_to_the_chat_address():
+    definition = lemonade_gateway("http://ubuntu:13305/v1/")
+    assert (definition.name, definition.transport) == ("lemonade", "http")
+    assert definition.url == "http://ubuntu:13305/mcp"
+    assert not definition.headers
+
+
+def test_lemonades_own_tools_send_the_key_chat_uses():
+    definition = lemonade_gateway("https://box.example:8443/api/v1/", "secret")
+    assert definition.url == "https://box.example:8443/mcp"
+    assert definition.headers == {"Authorization": "Bearer secret"}
+
+
+def test_lemonades_own_tools_need_a_real_address():
+    with pytest.raises(ServerImportError):
+        lemonade_gateway("not an address")
 
 
 def test_the_mcp_servers_block_is_the_main_shape():
