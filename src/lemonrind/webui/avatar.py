@@ -50,6 +50,7 @@ SLEEP_AFTER_SECONDS = 300  # nothing happening for this long: the cat goes to sl
 LISTEN_SECONDS = 4.0  # after the last key press, back to idle
 MOOD_SECONDS = 6.0  # how long a happy or annoyed look lasts
 TALK_AFTER_SECONDS = 2.5  # the mouth keeps going this long after the reply has arrived, then stops
+ZOOM = 1.1  # the cat a little larger in its box: with no caption, the ring still fits
 TEXT_SPEED = (
     45  # characters per second the mouth follows (the page's own default is a slow reading pace)
 )
@@ -61,7 +62,7 @@ def serve_avatar() -> None:
 
 
 def avatar_url(cat: str) -> str:
-    return f"{URL_PREFIX}/{PAGE}?debug=0&label=0&cat={cat}&cps={TEXT_SPEED}"
+    return f"{URL_PREFIX}/{PAGE}?debug=0&label=0&zoom={ZOOM}&cat={cat}&cps={TEXT_SPEED}"
 
 
 class AvatarBrain:

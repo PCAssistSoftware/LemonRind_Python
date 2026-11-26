@@ -17,6 +17,7 @@
     ?label=0          hide the state label under the ring
     ?cat=genie        which cat to show: classic (default), genie, jess, sid  (#genie also works)
     ?cps=15           text reading pace (characters per second)
+    ?zoom=1.1         draw the cat and its ring larger in the same box (0.5-1.6; 1.1 fits with ?label=0)
 
   JavaScript API (window.Avatar)
     Avatar.setState('idle'|'listening'|'thinking'|'speaking'|'sleep')
@@ -164,6 +165,7 @@ const cfg = {
   hue: num('hue', 190),
   glow: num('glow', 1),
   label: qs.get('label') !== '0',
+  zoom: Math.min(1.6, Math.max(.5, num('zoom', 1))),
   cat: (qs.get('cat') || location.hash.replace('#', '') || 'classic').toLowerCase(),
   userHue: qs.has('hue'),
 };
@@ -555,7 +557,7 @@ let PS = 1, PSb = 1, PCX = 0, PCY = 0, LW = 1, cy_ = 1, sy_ = 0, cp_ = 1, sp_ = 
 function computeProjection() {
   const br = Math.sin(brPhase) * S.breAmp;
   const eb = 1 - Math.pow(1 - boot, 3);
-  const base = Math.min(W, H) / 2 / 1.78;
+  const base = Math.min(W, H) / 2 / 1.78 * cfg.zoom;
   PSb = base * DPR;
   PS = PSb * (1 + .01 * br) * (.94 + .06 * eb);
   PCX = W / 2 * DPR;
