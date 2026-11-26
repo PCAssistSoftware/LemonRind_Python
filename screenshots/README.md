@@ -69,7 +69,7 @@ Fourteen sections, each saved with the Save button, except the lists (memories, 
 | ![Settings: Lemonade](settings-lemonade.png) | ![Settings: Assistant](settings-assistant.png) |
 | Lemonade: the address, an optional key, the default models | Assistant: the base instructions |
 | ![Settings: Persona](settings-persona.png) | ![Settings: Interface](settings-interface.png) |
-| Persona: who the assistant is and how it writes | Interface: theme and the thinking panel |
+| Persona: who the assistant is and how it writes | Interface: theme, the thinking panel and the avatar |
 | ![Settings: Storage](settings-storage.png) | ![Settings: Web search](settings-web-search.png) |
 | Storage: where the data is kept and what uses the space | Web search: one of four services |
 | ![Settings: File system access](settings-file-system.png) | ![Settings: Image generation](settings-image-generation.png) |
