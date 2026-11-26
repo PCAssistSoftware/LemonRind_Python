@@ -84,6 +84,10 @@ async def test_the_page_says_which_job_is_running_and_with_which_model(user: Use
 
         (note,) = elements(user, "job-running-note")
         assert note.text == "Job running: Nightly job (Other-Chat)"
+        (tip,) = elements(
+            user, "job-running-tip"
+        )  # the whole text on hover, for when the line is cut off
+        assert tip.text == "Job running: Nightly job (Other-Chat)"  # type: ignore[attr-defined]
         module.live.end("job-chat")
         await asyncio.sleep(1.8)
         assert not note.visible  # and it goes away when the job ends

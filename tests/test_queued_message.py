@@ -101,3 +101,33 @@ async def test_the_cross_takes_a_queued_message_back_into_the_box(user: User, tm
     finally:
         lemonade.release.set()
         set_context(None)
+
+
+async def test_the_send_button_keeps_one_tooltip_that_says_stop_while_a_reply_runs(
+    user: User, tmp_path: Path
+):
+    lemonade = HeldReply()
+    context = make_context(tmp_path, lemonade)
+    set_context(context)
+    register_pages()
+    try:
+        await user.open("/")
+        await user.should_see("Lemonade healthy")
+        await settle()
+
+        def tips() -> list[str]:
+            return [tip.text for tip in user.find(marker="send-tip").elements]  # type: ignore[attr-defined]
+
+        assert tips() == ["Send (Enter)"]
+        await send(user, "First question")
+        await until_requested(lemonade, 1)
+        assert tips() == ["Stop"]  # the same tooltip, with new words
+        lemonade.release.set()
+        await user.should_see("Answer 1.")
+        await send(user, "Second question")
+        await user.should_see("Answer 2.")
+        await settle()
+        assert tips() == ["Send (Enter)"]  # still only one after two replies
+    finally:
+        lemonade.release.set()
+        set_context(None)

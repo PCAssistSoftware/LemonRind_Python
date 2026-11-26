@@ -254,7 +254,9 @@ def build_interface(settings: Settings) -> Applier:
     ).mark("settings-thinking")
     _note("Expand a reply's reasoning panel automatically instead of starting collapsed.")
     ui.label("Avatar").classes("text-subtitle2 q-mt-md")
-    avatar_on = ui.switch("Show the avatar", value=settings.ui.avatar_enabled).mark("settings-avatar")
+    avatar_on = ui.switch("Show the avatar", value=settings.ui.avatar_enabled).mark(
+        "settings-avatar"
+    )
     _note(
         "An animated cat avatar that shows what the assistant is doing: listening while you type, thinking, speaking "
         "as the reply arrives, and asleep when no model is loaded or nothing has happened for a while."

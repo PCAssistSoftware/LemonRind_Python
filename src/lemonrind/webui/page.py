@@ -17,6 +17,7 @@ Stop button); ``try / except / else / finally``.
 from __future__ import annotations
 
 import asyncio
+import logging
 import shutil
 import tempfile
 import time
@@ -90,6 +91,8 @@ from lemonrind.webui.sidebar import ChatList
 from lemonrind.webui.stats import SessionTotals, StatsPanel
 from lemonrind.webui.styles import CSS, JS
 from lemonrind.webui.usage_dialog import show_usage
+
+logger = logging.getLogger(__name__)
 
 HEALTH_POLL_SECONDS = 20
 
@@ -211,7 +214,9 @@ class ChatPage:
             # narrow window, where it would push the header's buttons onto a second row.
             self.job_note = ui.label().classes("text-caption lr-muted gt-sm lr-one-line")
             self.job_note.style("max-width: 28rem").mark("job-running-note")
-            self.job_note_tip = self.job_note.tooltip("")
+            # element.tooltip() returns the element itself, so keep the tooltip to change its text later.
+            with self.job_note:
+                self.job_note_tip = ui.tooltip("").mark("job-running-tip")
             self.job_note.set_visibility(False)
             self.loading_row.set_visibility(False)
             self.title = (
@@ -390,7 +395,8 @@ class ChatPage:
                 self.input.on("keydown", lambda: self.avatar.brain.typing(), throttle=1.0)
                 self.send_button = ui.button(icon="arrow_upward", on_click=self._send_clicked)
                 self.send_button.props("round color=primary").mark("send")
-                self.send_button.tooltip("Send (Enter)")
+                with self.send_button:  # one tooltip whose words change, never a new one per reply
+                    self.send_tip = ui.tooltip("Send (Enter)").mark("send-tip")
                 # How full the model's memory is: a ring beside the Send button with the percentage inside. Hover
                 # for the exact numbers; click for the full breakdown.
                 self.context_ring = ui.circular_progress(
@@ -982,6 +988,8 @@ class ChatPage:
             # NiceGUI remembers "which container am I building inside" per task, and a new task starts
             # with none. Entering the message area here lets the bubble's callbacks use ui.* calls.
             def on_event(event) -> None:
+                if self._gone():
+                    return  # the tab was closed: the turn carries on and is saved, there is just no one to show it to
                 bubble.on_event(event)
                 self.avatar.brain.on_event(event)
                 if isinstance(event, ToolStarted | ToolFinished):
@@ -1007,7 +1015,9 @@ class ChatPage:
         try:
             reply = await self._task
         except asyncio.CancelledError:
-            if self._task.cancelled():  # the Stop button: keep the part that arrived
+            if not self._task.cancelled():
+                raise  # the whole page is being torn down: let that happen
+            if not self._closed_during_turn("was stopped"):  # the Stop button: keep what arrived
                 bubble.mark_stopped()
                 self.avatar.brain.turn_stopped()
                 if not self.conversation.is_saved or not self._exchange_saved(text):
@@ -1015,18 +1025,20 @@ class ChatPage:
                         text  # nothing was kept: put the message back so it can be re-sent
                     )
                     self._restore_attachment(attachment)
-            else:
-                raise  # the whole page is being torn down: let that happen
         except LemonadeError as error:
-            bubble.show_error(str(error))
-            self.avatar.brain.turn_finished(ok=False)
-            self.input.value = text  # not saved: put the message back so it can be re-sent
-            self._restore_attachment(attachment)
+            if not self._closed_during_turn(f"failed ({error})"):
+                bubble.show_error(str(error))
+                self.avatar.brain.turn_finished(ok=False)
+                self.input.value = text  # not saved: put the message back so it can be re-sent
+                self._restore_attachment(attachment)
         except Exception as error:  # a bug: show it in the chat instead of leaving the page stuck
-            bubble.show_error(f"Something went wrong: {error}")
-            self.avatar.brain.turn_finished(ok=False)
-            raise
+            if not self._gone():
+                bubble.show_error(f"Something went wrong: {error}")
+                self.avatar.brain.turn_finished(ok=False)
+            raise  # logged either way, so the bug is not lost
         else:
+            if self._closed_during_turn("finished"):
+                return
             bubble.finish(reply, lambda: self._continue_reply(bubble))
             self.avatar.brain.turn_finished(ok=True)
             if reply.text and reply.finish_reason == "length":
@@ -1039,12 +1051,27 @@ class ChatPage:
             completed = True
         finally:
             self._task = None
-            self._set_busy(False)
-            self.conversation.refresh_session()
-            self._update_title()
-            self.chat_list.render.refresh()
-            self.input.run_method("focus")
-        await self._after_turn(completed, text)
+            if not self._gone():
+                self._set_busy(False)
+                self.conversation.refresh_session()
+                self._update_title()
+                self.chat_list.render.refresh()
+                self.input.run_method("focus")
+        if not self._gone():
+            await self._after_turn(completed, text)
+
+    def _closed_during_turn(self, outcome: str) -> bool:
+        """Was the tab closed or reloaded while a reply ran? Then skip the page updates and just note it.
+
+        NiceGUI deletes a page a few seconds after its tab goes away, but the reply's task carries on, and the
+        conversation saves the exchange itself. Touching the deleted page's widgets would only raise errors.
+        """
+        if not self._gone():
+            return False
+        logger.debug(
+            "The page was closed while a reply ran (it %s); page updates skipped.", outcome
+        )
+        return True
 
     async def _draw(self, prompt: str) -> None:
         """Draw a picture from ``prompt`` with the image model picked in the list, and save it as an exchange."""
@@ -1085,32 +1112,40 @@ class ChatPage:
         completed = False
         try:
             while not self._task.done():
-                bubble.show_progress(f"Drawing with {model}... {int(time.monotonic() - started)}s")
+                if not self._gone():
+                    bubble.show_progress(
+                        f"Drawing with {model}... {int(time.monotonic() - started)}s"
+                    )
                 await asyncio.wait({self._task}, timeout=1)
             drawn = self._task.result()
         except asyncio.CancelledError:
-            if self._task.cancelled():  # the Stop button
+            if not self._task.cancelled():
+                raise  # the whole page is being torn down: let that happen
+            if not self._closed_during_turn("was stopped"):  # the Stop button
                 bubble.mark_stopped()
                 self.avatar.brain.turn_stopped()
                 self.input.value = prompt
-            else:
-                raise  # the whole page is being torn down: let that happen
         except (ToolError, LemonadeError) as error:
-            bubble.show_error(str(error))
-            self.avatar.brain.turn_finished(ok=False)
-            self.input.value = prompt
+            if not self._closed_during_turn(f"failed ({error})"):
+                bubble.show_error(str(error))
+                self.avatar.brain.turn_finished(ok=False)
+                self.input.value = prompt
         else:
-            bubble.show_text(drawn.markdown)
-            self.avatar.brain.turn_finished(ok=True)
+            # Saved first: the picture is kept even when the tab was closed while it was drawn.
             self.conversation.record_drawing(prompt, drawn.markdown)
             completed = True
+            if not self._closed_during_turn("finished"):
+                bubble.show_text(drawn.markdown)
+                self.avatar.brain.turn_finished(ok=True)
         finally:
             self._task = None
-            self._set_busy(False)
-            self._update_title()
-            self.chat_list.render.refresh()
-            self.input.run_method("focus")
-        await self._after_turn(completed, prompt)
+            if not self._gone():
+                self._set_busy(False)
+                self._update_title()
+                self.chat_list.render.refresh()
+                self.input.run_method("focus")
+        if not self._gone():
+            await self._after_turn(completed, prompt)
 
     def _exchange_saved(self, text: str) -> bool:
         """Was the message just sent written to the current chat? (A stopped reply is only kept if some answer arrived.)"""
@@ -1121,12 +1156,12 @@ class ChatPage:
         self._busy = busy
         if busy:
             self.send_button.props("icon=stop color=negative")
-            self.send_button.tooltip("Stop")
+            self.send_tip.text = "Stop"
             self.input.props('placeholder="Type to queue a message for the assistant (Enter)"')
             self.model_select.disable()
         else:
             self.send_button.props("icon=arrow_upward color=primary")
-            self.send_button.tooltip("Send (Enter)")
+            self.send_tip.text = "Send (Enter)"
             self.input.props('placeholder="Type a message..."')
             self.model_select.enable()
         self._update_attach_state()
@@ -1137,6 +1172,8 @@ class ChatPage:
         outcome = await open_settings(
             self.context, self._model_choices, self.conversation, initial=section
         )
+        if self._gone():
+            return  # the tab was closed with Settings open: the dialog's wait ended, nothing was saved
         for note in outcome.notes:
             ui.notify(note, type="info", multi_line=True, timeout=8000)
         self._refresh_kb_select()  # the knowledge base attached to this chat may have changed
@@ -1277,6 +1314,8 @@ class ChatPage:
         """Ask before a tool that needs permission runs. "Allow for this chat" lasts until the chat changes."""
         if call.name in self._allowed_tools:
             return True
+        if self._closed_during_turn(f"asked to run {call.name}, refused as no one can answer"):
+            return False
         mcp = self._module(McpModule)
         server = mcp.server_name_for(call.name) if mcp else None
         answer = await ask_tool_approval(call.name, server, self.conversation.describe_call(call))

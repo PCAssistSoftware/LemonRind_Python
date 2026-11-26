@@ -9,7 +9,7 @@ from nicegui.testing import User
 from lemonrind.lemonade.models import ModelInfo
 from lemonrind.modules import ImagesModule
 from lemonrind.webui.context import AppContext
-from tests.conftest import elements
+from tests.conftest import elements, must
 from tests.test_images import PNG
 from tests.test_settings_sections import settle
 from tests.test_webui import FakeLemonade
@@ -165,3 +165,35 @@ async def test_a_failed_drawing_is_explained_and_the_description_comes_back(
     assert web.repo.list_sessions() == []  # nothing saved for a failed picture
     (box,) = elements(user, "message-input")
     assert box.value == "try again"
+
+
+async def test_a_picture_finished_after_the_tab_closed_is_still_saved(
+    user: User, web: AppContext, tmp_path, caplog
+):
+    lemonade = DrawingLemonade()
+    release = asyncio.Event()
+    draw = lemonade.generate_image
+
+    async def slow_draw(prompt: str, model: str, **options) -> bytes:
+        await release.wait()  # still drawing when the tab goes
+        return await draw(prompt, model, **options)
+
+    lemonade.generate_image = slow_draw  # type: ignore[method-assign]
+    module = await open_page(user, web, lemonade)
+    module.images_dir.mkdir(parents=True, exist_ok=True)
+    await pick(user, "Draw-It")
+    user.find(marker="message-input").type("a lemon on a table")
+    user.find(marker="send").click()
+    await user.should_see("Draw a picture")
+    user.find(marker="dialog-ok").click()
+    await settle()
+
+    must(user.client).delete()  # the tab is closed or reloaded
+    release.set()
+    await asyncio.sleep(1.5)  # the drawing loop checks once a second
+
+    (session,) = web.repo.list_sessions()
+    messages = web.repo.list_messages(session.id)
+    assert messages[0].content == "a lemon on a table"
+    assert len(messages) == 2  # the picture was kept
+    assert not [r for r in caplog.records if r.levelname == "ERROR"]

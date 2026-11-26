@@ -2,6 +2,14 @@
 
 What changed in each version of the Python edition, newest first. Each entry is dated, and a change is added here when it is pushed.
 
+## 0.2.21 - 26-11-2026
+
+### Fixed
+
+- **Closing or reloading the tab while a reply runs.** The reply always carried on and was saved, but when it ended the app tried to update the page that had gone, and the log filled with errors about deleted elements. It now notices the page has gone and skips the updates quietly. A tool that needs your permission is refused if the tab has been closed by the time it is asked for, since no one is there to answer, and the assistant is told so. A picture that finished drawing after the tab closed used to be left out of the chat (the file was written, but the chat never recorded it); it is now kept like any other.
+- **Tooltips that piled up.** Each reply added two more hover tips to the Send button (one saying "Stop", one "Send (Enter)") instead of changing the words of the one it had. It now keeps a single tip.
+- **The full "Job running" text on hover.** When the note about a running scheduled job is too long for the header and cut off, resting the pointer on it now shows the whole text, as intended. Its tip had always been empty.
+
 ## 0.2.20 - 26-11-2026
 
 ### Added
