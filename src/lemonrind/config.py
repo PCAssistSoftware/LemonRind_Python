@@ -111,6 +111,12 @@ class UiSettings(BaseModel):
     # Widths in pixels of the chat list (left) and the stats panel (right): drag the edge of a panel to change them.
     left_panel_width: int = Field(default=300, ge=200, le=560)
     right_panel_width: int = Field(default=280, ge=220, le=520)
+    # The animated cat that shows what the assistant is doing (Settings > Interface).
+    avatar_enabled: bool = True
+    avatar_cat: Literal["genie", "jess", "sid"] = "genie"
+    avatar_position: Literal["left", "right"] = (
+        "left"  # top of the chat list, or of the stats panel
+    )
 
 
 class WebSearchSettings(BaseModel):

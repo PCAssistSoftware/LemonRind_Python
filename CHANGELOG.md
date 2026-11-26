@@ -2,6 +2,12 @@
 
 What changed in each version of the Python edition, newest first. Each entry is dated, and a change is added here when it is pushed.
 
+## 0.2.20 - 26-11-2026
+
+### Added
+
+- **The assistant's cat.** An animated holographic cat at the top of the chat list shows what the assistant is doing: it listens while you type, thinks while the model works or a tool runs, talks as the reply arrives (its mouth follows the words), and goes back to its own little habits when it is done. It looks pleased when a reply finishes and annoyed when one fails. It falls asleep when no chat model is loaded, or after a few minutes with nothing happening. Settings > Interface can hide it, choose the cat (Genie, Jess or Sid) and move it to the top of the stats panel instead.
+
 ## 0.2.19 - 17-11-2026
 
 ### Added

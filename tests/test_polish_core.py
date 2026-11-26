@@ -303,7 +303,8 @@ def test_main_wires_everything_up_before_starting_the_server(
     assert started["static"] == [
         "/generated",
         "/attached",
-    ]  # generated pictures, and pictures you attached
+        "/avatar",
+    ]  # generated pictures, pictures you attached, and the assistant's cat
     assert (tmp_path / "session_secret").is_file() and started["storage_secret"]
     assert "WARNING" not in capsys.readouterr().out  # loopback only: no warning about the network
 

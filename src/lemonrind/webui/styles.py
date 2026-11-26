@@ -109,6 +109,10 @@ body.lr-stopped .nicegui-error-popup { display: none !important; }
     position: sticky; top: 0; z-index: 3; background: var(--lr-pane);
     box-shadow: 0 -24px 0 0 var(--lr-pane);  /* hides list text peeking through the panel's padding above the switch */
 }
+/* The assistant's cat at the top of a side panel: a fixed-size screen that does not shrink in the panel. */
+.lr-avatar { margin: 8px 8px 4px; height: 190px; min-height: 190px; flex-shrink: 0; border-radius: 10px;
+  overflow: hidden; border: 1px solid rgba(127, 127, 127, 0.3); }
+.lr-avatar iframe { width: 100%; height: 100%; border: 0; display: block; }
 .lr-segment { flex: 1 1 0; border-radius: 0 !important; font-weight: 600; }
 .lr-segment + .lr-segment { border-left: 1px solid rgba(127, 127, 127, 0.5); }
 

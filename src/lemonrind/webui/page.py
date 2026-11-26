@@ -59,6 +59,7 @@ from lemonrind.modules import ImagesModule, KnowledgeModule, McpModule, Schedule
 from lemonrind.modules.knowledge import OPTION_KEY as KNOWLEDGE_OPTION
 from lemonrind.modules.plan import PLAN_TOOL, plan_from_arguments
 from lemonrind.modules.tool import ToolError
+from lemonrind.webui.avatar import Avatar
 from lemonrind.webui.bubbles import (
     AssistantBubble,
     add_date_divider,
@@ -117,6 +118,8 @@ class ChatPage:
         )
         self.conversation.time_awareness = True  # the model is always told the real date and time
         self.conversation.max_output_tokens = context.settings.assistant.max_reply_tokens
+        ui_settings = context.settings.ui
+        self.avatar = Avatar(ui_settings.avatar_enabled, ui_settings.avatar_cat)
         self.stats_panel = StatsPanel(
             modules=lambda: context.modules.modules if context.modules else (),
             on_tab_change=self._stats_tab_changed,
@@ -243,6 +246,8 @@ class ChatPage:
             f"width={ui_settings.left_panel_width} breakpoint=900"
         )
         with self.left:
+            # The cat sits at the top of the chat list or of the stats panel (Settings > Interface).
+            self.avatar_left = ui.column().classes("w-full gap-0 shrink-0")
             self.chat_list = ChatList(
                 self.context,
                 current_id=lambda: (
@@ -261,6 +266,7 @@ class ChatPage:
             "lr_resize", self._panel_resized, throttle=0.05
         )  # sent by the drag handles (see styles.py)
         with self.right:
+            self.avatar_right = ui.column().classes("w-full gap-0 shrink-0")
             # The numbers at the top, the "what is the model given?" buttons pinned to the bottom of the panel.
             with (
                 ui.column()
@@ -295,6 +301,15 @@ class ChatPage:
                         on_click=lambda: self._open_settings("modules"),
                     ).props("flat dense no-caps").mark("manage-modules")
                 self.manage_buttons.set_visibility(False)
+        with self._avatar_slot():
+            self.avatar.build()
+
+    def _avatar_slot(self) -> ui.element:
+        return (
+            self.avatar_right
+            if self.context.settings.ui.avatar_position == "right"
+            else self.avatar_left
+        )
 
     def _panel_resized(self, event) -> None:
         """A drag handle moved: set that panel's width (kept within sensible limits) and remember it when the drag ends."""
@@ -372,6 +387,7 @@ class ChatPage:
                 )
                 # Enter sends; Shift+Enter (and the other modifier keys) still insert a new line.
                 self.input.on("keydown.enter.exact.prevent", self._enter_pressed)
+                self.input.on("keydown", lambda: self.avatar.brain.typing(), throttle=1.0)
                 self.send_button = ui.button(icon="arrow_upward", on_click=self._send_clicked)
                 self.send_button.props("round color=primary").mark("send")
                 self.send_button.tooltip("Send (Enter)")
@@ -428,6 +444,7 @@ class ChatPage:
             if self._gone():
                 return
             self._show_health(False)
+            self.avatar.brain.set_model_ready(False)
             if announce_problems:
                 ui.notify(str(error), type="negative", multi_line=True)
             return
@@ -436,6 +453,10 @@ class ChatPage:
         ):  # the tab was closed or reloaded while Lemonade was answering: nothing left to update
             return
         self._show_health(health.is_ok)
+        loaded = {m.model_name for m in health.all_models_loaded}
+        self.avatar.brain.set_model_ready(
+            bool(self.conversation.model) and self.conversation.model in loaded
+        )
 
         self._models = list(models)
         self._chat_models = [m.id for m in models if m.category == "chat"]
@@ -465,8 +486,10 @@ class ChatPage:
             )
         self.conversation.model = model
         self._set_model_options(model)
-        if model not in {m.model_name for m in health.all_models_loaded}:
+        if model not in loaded:
             await self._load_model(model)
+        else:
+            self.avatar.brain.set_model_ready(True)
         self._update_context_label()
 
     def _tell_once(self, message: str, *, type: Literal["negative", "warning"]) -> None:
@@ -498,6 +521,7 @@ class ChatPage:
                 self.loading_label.text = f"Loading {name}... {int(time.monotonic() - started)}s"
                 await asyncio.wait({load}, timeout=1)
             await load  # re-raises LemonadeError if the load failed
+            self.avatar.brain.set_model_ready(True)
         except LemonadeError as error:
             ui.notify(str(error), type="negative", multi_line=True)
         finally:
@@ -939,6 +963,7 @@ class ChatPage:
 
     async def _send(self, text: str, attachment: Attachment | None = None) -> None:
         self._set_busy(True)
+        self.avatar.brain.turn_started()
         if self._continuable is not None and not self._continuable.root.is_deleted:
             self._continuable.hide_continue()  # a newer message makes the old button stale
         self._continuable = None
@@ -958,6 +983,7 @@ class ChatPage:
             # with none. Entering the message area here lets the bubble's callbacks use ui.* calls.
             def on_event(event) -> None:
                 bubble.on_event(event)
+                self.avatar.brain.on_event(event)
                 if isinstance(event, ToolStarted | ToolFinished):
                     self.stats_panel.set_tool_calls(bubble.tool_chips())
                 if (
@@ -983,6 +1009,7 @@ class ChatPage:
         except asyncio.CancelledError:
             if self._task.cancelled():  # the Stop button: keep the part that arrived
                 bubble.mark_stopped()
+                self.avatar.brain.turn_stopped()
                 if not self.conversation.is_saved or not self._exchange_saved(text):
                     self.input.value = (
                         text  # nothing was kept: put the message back so it can be re-sent
@@ -992,13 +1019,16 @@ class ChatPage:
                 raise  # the whole page is being torn down: let that happen
         except LemonadeError as error:
             bubble.show_error(str(error))
+            self.avatar.brain.turn_finished(ok=False)
             self.input.value = text  # not saved: put the message back so it can be re-sent
             self._restore_attachment(attachment)
         except Exception as error:  # a bug: show it in the chat instead of leaving the page stuck
             bubble.show_error(f"Something went wrong: {error}")
+            self.avatar.brain.turn_finished(ok=False)
             raise
         else:
             bubble.finish(reply, lambda: self._continue_reply(bubble))
+            self.avatar.brain.turn_finished(ok=True)
             if reply.text and reply.finish_reason == "length":
                 self._continuable = bubble
             for stats in reply.round_stats or (
@@ -1061,14 +1091,17 @@ class ChatPage:
         except asyncio.CancelledError:
             if self._task.cancelled():  # the Stop button
                 bubble.mark_stopped()
+                self.avatar.brain.turn_stopped()
                 self.input.value = prompt
             else:
                 raise  # the whole page is being torn down: let that happen
         except (ToolError, LemonadeError) as error:
             bubble.show_error(str(error))
+            self.avatar.brain.turn_finished(ok=False)
             self.input.value = prompt
         else:
             bubble.show_text(drawn.markdown)
+            self.avatar.brain.turn_finished(ok=True)
             self.conversation.record_drawing(prompt, drawn.markdown)
             completed = True
         finally:
@@ -1110,6 +1143,9 @@ class ChatPage:
         if outcome.open_chat:
             self._open_chat_by_id(outcome.open_chat)
         if outcome.saved:
+            ui_settings = self.context.settings.ui
+            self.avatar.apply(enabled=ui_settings.avatar_enabled, cat=ui_settings.avatar_cat)
+            self.avatar.move_to(self._avatar_slot())
             self.conversation.set_system_prompt(build_system_prompt(self.context.settings))
             self.conversation.max_rounds = self.context.settings.modules.max_tool_rounds
             assistant = self.context.settings.assistant

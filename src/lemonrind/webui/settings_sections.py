@@ -34,6 +34,7 @@ from lemonrind.config import Settings
 from lemonrind.modules import AutoBackupModule, Module, ModuleRegistry
 from lemonrind.modules.backup import BackupError
 from lemonrind.modules.memory import MemoryModule
+from lemonrind.webui.avatar import CATS, POSITIONS
 from lemonrind.webui.memories_dialog import build_memories
 
 Applier = Callable[[], str | None]
@@ -252,10 +253,29 @@ def build_interface(settings: Settings) -> Applier:
         "Thinking panel open by default", value=settings.ui.thinking_open_by_default
     ).mark("settings-thinking")
     _note("Expand a reply's reasoning panel automatically instead of starting collapsed.")
+    ui.label("The assistant's cat").classes("text-subtitle2 q-mt-md")
+    avatar_on = ui.switch("Show the cat", value=settings.ui.avatar_enabled).mark("settings-avatar")
+    _note(
+        "An animated cat that shows what the assistant is doing: listening while you type, thinking, speaking "
+        "as the reply arrives, and asleep when no model is loaded or nothing has happened for a while."
+    )
+    avatar_cat = (
+        ui.select(CATS, value=settings.ui.avatar_cat, label="Cat")
+        .classes("w-full")
+        .mark("settings-avatar-cat")
+    )
+    avatar_position = (
+        ui.select(POSITIONS, value=settings.ui.avatar_position, label="Where it sits")
+        .classes("w-full")
+        .mark("settings-avatar-position")
+    )
 
     def apply() -> str | None:
         settings.ui.theme = theme.value
         settings.ui.thinking_open_by_default = thinking.value
+        settings.ui.avatar_enabled = avatar_on.value
+        settings.ui.avatar_cat = avatar_cat.value
+        settings.ui.avatar_position = avatar_position.value
         return None
 
     return apply

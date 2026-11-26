@@ -167,6 +167,7 @@ These work with `lemonrind-web` (the web app) and `lemonrind` (the terminal chat
 - Viewers for exactly what the model is given: the **system prompt**, the **turn context** (what would be added if you pressed Send now) and the **tools sent**. A **log viewer** shows the app's
   log and Lemonade's own server log, with level and text filters, pause and copy
 - Light and dark themes, side panels you can resize by dragging, and a layout that works on a phone
+- An animated holographic cat that shows what the assistant is doing: listening while you type, thinking, speaking as the reply arrives, and asleep when no model is loaded. Choose Genie, Jess or Sid, and whether it sits at the top of the chat list or the stats panel, in Settings > Interface
 
 ### Modules
 

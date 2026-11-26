@@ -29,6 +29,7 @@ from lemonrind.logging_setup import configure_logging
 from lemonrind.modules import ImagesModule
 from lemonrind.modules.images import URL_PREFIX
 from lemonrind.webui.auth import install_login, load_or_create_secret
+from lemonrind.webui.avatar import serve_avatar
 from lemonrind.webui.context import AppContext, set_context
 from lemonrind.webui.page import register_pages
 
@@ -152,6 +153,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     app.on_shutdown(context.aclose)
     serve_images(context)
     serve_attachments(data_dir)
+    serve_avatar()
     register_pages()
 
     print(f"Settings: {context.settings_file}")

@@ -1,0 +1,1313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LemonRind Avatar - Holo Cat</title>
+<!--
+  LemonRind holographic cat avatar  ·  v0.1 prototype
+  ======================================================
+  One self-contained file: no dependencies, no network. Canvas 2D, procedural geometry.
+
+  URL options
+    ?debug=0          hide the debug panel (press D to toggle)
+    ?bg=transparent   no background (set the host WebView background to transparent too)
+    ?style=points     point-cloud look instead of wireframe ("wire")
+    ?hue=190          base colour hue (0-360)   ?glow=1   glow strength (0-2)
+    ?label=0          hide the state label under the ring
+    ?cat=genie        which cat to show: classic (default), genie, jess, sid  (#genie also works)
+    ?cps=15           text reading pace (characters per second)
+
+  JavaScript API (window.Avatar)
+    Avatar.setState('idle'|'listening'|'thinking'|'speaking'|'sleep')
+    Avatar.setMood('neutral'|'happy'|'curious'|'annoyed')
+    Avatar.setCat('classic'|'genie'|'jess'|'sid')   also {"type":"cat","value":"genie"}
+    Avatar.quirk(name?)  play an idle habit now (random for the current cat if no name)   {"type":"quirk"}
+                Sid: huff, grumpyBlink, sideGlare · Genie: earOut, overShoulder, drowsy, sideEye, unimpressed · Jess: groom, track, glanceAway, perk, earFlick, catKiss
+
+  Text-driven speech (chat apps without TTS)
+    Avatar.speakText(chunk)   {"type":"text","value":"chunk"}   append streamed reply text; switches to 'speaking'
+    Avatar.endText()          {"type":"textEnd"}                reply complete: returns to idle once it has caught up
+    Avatar.stopText()         {"type":"textStop"}               cancel immediately
+    Avatar.setTextSpeed(cps)  {"type":"textSpeed","value":15}   reading pace in characters/sec (also ?cps=15)
+    Markdown symbols are ignored and ``` code blocks ``` are skipped. Sends {"type":"speechDone"} when finished.
+    Tip: setState('thinking') while waiting for the first token - the first text chunk switches to speaking.
+
+  TTS lip-sync (for later)
+    Audio level:  Avatar.setLevel(0..1) ~30-60x/sec from the playing audio (any TTS engine)
+    Visemes:      Avatar.viseme(id, durationMs)   {"type":"viseme","value":12,"duration":80}
+                  standard SAPI / System.Speech (VisemeReached) / Azure Speech viseme IDs 0-21
+    Avatar.setLevel(0..1)            audio level - send ~30-60x/sec while listening/speaking
+    Avatar.blink()  Avatar.twitch('left'|'right'|'both')  Avatar.lookAt(x, y, seconds)  (x,y in -1..1)
+    Avatar.setHue(h)  Avatar.setStyle('wire'|'points')  Avatar.setGlow(g)  Avatar.showDebug(bool)
+
+  Message bridge (same commands as JSON - works with WebView2 PostWebMessageAsJson / iframe postMessage)
+    {"type":"state","value":"listening"}   {"type":"level","value":0.42}   {"type":"mood","value":"happy"}
+    {"type":"blink"}  {"type":"lookAt","x":0.5,"y":-0.3,"duration":1.5}  {"type":"twitch","value":"left"}
+    A bare number is treated as a level, a bare state name as a state.
+
+  Events sent back to the host: {"type":"ready"}, {"type":"state","value":...}, {"type":"click"}
+    WebView2 -> chrome.webview.postMessage | pywebview -> window.pywebview.api.on_avatar_event(obj) if defined
+    iframe   -> parent.postMessage
+
+  Host snippets
+    WPF / WebView2 (VB.NET):
+      Await AvatarView.EnsureCoreWebView2Async()
+      AvatarView.DefaultBackgroundColor = System.Drawing.Color.Transparent
+      AvatarView.CoreWebView2.SetVirtualHostNameToFolderMapping("avatar.local", "Avatar",
+            Microsoft.Web.WebView2.Core.CoreWebView2HostResourceAccessKind.Allow)
+      AvatarView.Source = New Uri("https://avatar.local/holo-cat.html?debug=0&bg=transparent")
+      AvatarView.CoreWebView2.PostWebMessageAsJson("{""type"":""state"",""value"":""speaking""}")
+    Blazor:  <iframe id="avatar" src="avatar/holo-cat.html?debug=0&bg=transparent"></iframe>
+             JS:  window.avatarSend = m => document.getElementById('avatar').contentWindow.postMessage(m, '*');
+             C#:  await JS.InvokeVoidAsync("avatarSend", new { type = "level", value = lvl });
+    Avalonia (any WebView with script execution):  ExecuteScriptAsync("Avatar.setState('thinking')")
+    Python (pywebview):  w.evaluate_js("Avatar.setLevel(0.5)")
+-->
+<style>
+  :root { --hue: 190; }
+  html, body { margin: 0; height: 100%; overflow: hidden; }
+  body {
+    background:
+      radial-gradient(ellipse at 50% 45%, hsla(var(--hue), 80%, 30%, .20), transparent 60%),
+      #03070a;
+  }
+  body.transparent { background: transparent; }
+  canvas { display: block; width: 100%; height: 100%; }
+
+  #panel {
+    position: fixed; top: 12px; right: 12px; width: 252px; max-height: calc(100% - 24px); overflow: auto;
+    background: rgba(5, 14, 20, .88); border: 1px solid hsla(var(--hue), 90%, 60%, .35); border-radius: 10px;
+    padding: 12px; color: #cfefff; font: 12px/1.4 ui-monospace, Consolas, "Cascadia Mono", monospace;
+    backdrop-filter: blur(6px); user-select: none; box-sizing: border-box;
+  }
+  #panel.hidden { display: none; }
+  #panel h3 { margin: 0 0 10px; font-size: 11px; letter-spacing: .18em; color: hsl(var(--hue), 90%, 70%); font-weight: 600; }
+  .lbl { margin: 6px 0 4px; opacity: .75; display: flex; justify-content: space-between; }
+  .row { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+  button {
+    flex: 1 1 auto; background: transparent; color: inherit; border: 1px solid hsla(var(--hue), 90%, 60%, .3);
+    border-radius: 5px; padding: 4px 6px; font: inherit; cursor: pointer; text-transform: lowercase;
+  }
+  button:hover { border-color: hsla(var(--hue), 90%, 60%, .8); }
+  button.on { background: hsla(var(--hue), 90%, 55%, .22); border-color: hsl(var(--hue), 90%, 60%); color: #fff; }
+  input[type=range] { width: 100%; accent-color: hsl(var(--hue), 90%, 60%); margin: 0; }
+  .meter { height: 5px; background: rgba(255, 255, 255, .08); border-radius: 3px; overflow: hidden; margin: 6px 0 4px; }
+  .meter > i { display: block; height: 100%; width: 0; background: hsl(var(--hue), 90%, 60%); }
+  .hint { opacity: .5; font-size: 11px; margin-top: 8px; }
+  #err { color: #ff9a9a; font-size: 11px; margin-top: 4px; }
+  #gaze { position: relative; height: 64px; border: 1px solid hsla(var(--hue), 90%, 60%, .3); border-radius: 5px; cursor: crosshair;
+          background: linear-gradient(hsla(var(--hue),90%,60%,.12),hsla(var(--hue),90%,60%,.12)) 50% 0/1px 100% no-repeat,
+                      linear-gradient(hsla(var(--hue),90%,60%,.12),hsla(var(--hue),90%,60%,.12)) 0 50%/100% 1px no-repeat; }
+  #gazedot { position: absolute; width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 50%; left: 50%; top: 50%;
+             background: hsl(var(--hue), 90%, 65%); pointer-events: none; }
+  #log { font-size: 10.5px; line-height: 1.45; max-height: 110px; overflow: auto; background: rgba(255,255,255,.03);
+         border: 1px solid hsla(var(--hue), 90%, 60%, .2); border-radius: 5px; padding: 4px 6px; white-space: pre-wrap; word-break: break-all; }
+  #log .in { color: #ffd38a; } #log .out { color: hsl(var(--hue), 90%, 72%); }
+  body.checker { background: repeating-conic-gradient(#1c1c1c 0 25%, #2a2a2a 0 50%) 0 0 / 22px 22px; }
+  textarea { width: 100%; box-sizing: border-box; background: rgba(255,255,255,.04); color: inherit; border: 1px solid hsla(var(--hue), 90%, 60%, .3);
+             border-radius: 5px; font: inherit; padding: 5px; resize: vertical; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="panel">
+  <h3>LEMONRIND · AVATAR</h3>
+  <div class="lbl">cat</div>        <div class="row" id="cats"></div>
+  <div class="lbl">state</div>      <div class="row" id="states"></div>
+  <div class="lbl">mood</div>       <div class="row" id="moods"></div>
+  <div class="lbl">audio source</div><div class="row" id="sources"></div>
+  <div class="lbl"><span>manual level</span><span id="lvlv">0.00</span></div>
+  <input type="range" id="lvl" min="0" max="1" step="0.01" value="0">
+  <div class="meter"><i id="meter"></i></div>
+  <div class="lbl">speak text (streamed like chat)</div>
+  <textarea id="say" rows="3">Hi! I've checked the patch status across all three sites. Two machines still need the November update, so I've queued them for tonight. Anything else you'd like me to look at?</textarea>
+  <div class="row" style="margin-top:4px"><button id="sayb">▶ stream it</button><button id="stopb">■ stop</button></div>
+  <div class="lbl"><span>reading speed (chars/sec)</span><span id="cpsv"></span></div>
+  <input type="range" id="cps" min="4" max="40" step="1">
+  <div class="row" style="margin-top:6px"><button id="visb" title="Plays a sample sequence of TTS mouth-shape IDs">▶ viseme test (for TTS)</button></div>
+
+  <div class="lbl">idle habits <span style="opacity:.6">(play automatically when idle)</span></div>
+  <div class="row" id="quirks"></div>
+  <div class="lbl">look &amp; ears <span style="opacity:.6">click/drag pad to aim gaze</span></div>
+  <div id="gaze"><i id="gazedot"></i></div>
+  <div class="row" style="margin-top:6px"><button id="twl">twitch left</button><button id="twr">twitch right</button><button id="twitchb">both</button></div>
+
+  <div class="lbl">style</div>      <div class="row" id="styles"></div>
+  <div class="lbl"><span>hue</span><span id="huev"></span></div>
+  <input type="range" id="hue" min="0" max="360" step="1">
+  <div class="lbl"><span>glow</span><span id="glowv"></span></div>
+  <input type="range" id="glow" min="0" max="2" step="0.05">
+  <div class="lbl">display</div>
+  <div class="row"><button id="labelb">state label</button><button id="bgb" title="Preview the transparent background (?bg=transparent) on a checkerboard">transparent bg</button></div>
+  <div class="row" style="margin-top:10px">
+    <button id="demo">▶ demo loop</button><button id="blinkb">blink</button>
+  </div>
+  <div class="lbl">messages <span style="opacity:.6">→ to app · ← from app</span></div>
+  <div id="log"></div>
+  <div class="hint">D toggles panel · 1-5 states · click the cat · <span id="fps"></span></div>
+  <div id="err"></div>
+</div>
+
+<script>
+(() => {
+'use strict';
+
+/* ---------------------------------------------------------------- config */
+const qs = new URLSearchParams(location.search);
+const num = (k, d) => { const v = parseFloat(qs.get(k)); return Number.isFinite(v) ? v : d; };
+const cfg = {
+  debug: qs.get('debug') !== '0',
+  transparent: qs.get('bg') === 'transparent',
+  style: qs.get('style') === 'points' ? 'points' : 'wire',
+  hue: num('hue', 190),
+  glow: num('glow', 1),
+  label: qs.get('label') !== '0',
+  cat: (qs.get('cat') || location.hash.replace('#', '') || 'classic').toLowerCase(),
+  userHue: qs.has('hue'),
+};
+const STATES = ['idle', 'listening', 'thinking', 'speaking', 'sleep'];
+const MOODS = ['neutral', 'happy', 'curious', 'annoyed'];
+const SOURCES = ['sim', 'mic', 'manual', 'off'];
+
+/* ---------------------------------------------------------------- utils */
+const clamp = (v, a = 0, b = 1) => v < a ? a : v > b ? b : v;
+const lerp = (a, b, t) => a + (b - a) * t;
+const rand = (a, b) => a + Math.random() * (b - a);
+const approach = (cur, tgt, rate, dt) => cur + (tgt - cur) * (1 - Math.exp(-rate * dt));
+const noise = (t, s = 0) => (Math.sin(t * 1.31 + s) + Math.sin(t * 2.17 + s * 1.7) * .6 + Math.sin(t * 3.73 + s * 2.3) * .3) / 1.9;
+const mx = p => [-p[0], p[1], p[2] || 0];
+const lp3 = (a, b, t) => [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2] || 0, b[2] || 0, t)];
+const TAU = Math.PI * 2;
+
+/* ---------------------------------------------------------------- canvas */
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const off = document.createElement('canvas');
+const octx = off.getContext('2d');
+const hasFilter = typeof ctx.filter === 'string';
+let W = 0, H = 0, DPR = 1, scanPat = null;
+
+function resize() {
+  DPR = Math.min(2, window.devicePixelRatio || 1);
+  W = innerWidth; H = innerHeight;
+  for (const c of [cv, off]) { c.width = Math.max(1, Math.round(W * DPR)); c.height = Math.max(1, Math.round(H * DPR)); }
+  const p = document.createElement('canvas');
+  const ph = Math.max(3, Math.round(3 * DPR));
+  p.width = 1; p.height = ph;
+  const pc = p.getContext('2d'); pc.fillStyle = '#000'; pc.fillRect(0, 0, 1, Math.max(1, Math.round(DPR)));
+  scanPat = ctx.createPattern(p, 'repeat');
+}
+addEventListener('resize', resize);
+resize();
+if (cfg.transparent) document.body.classList.add('transparent');
+
+/* ---------------------------------------------------------------- state */
+let state = 'idle', mood = 'neutral', stateT = 0;
+const S = { // smoothed animation parameters
+  pupil: .45, earFwd: 0, earBack: 0, bright: .75, ring: .15, lid: 1, roll: 0, scan: 0, happy: 0,
+  hueShift: 0, breAmp: 1, breRate: .25, browY: 0, browIn: 0, browAsym: 0,
+  mouth: 0, mouthW: 1, whisk: 0, alert: 0, gx: 0, gy: 0, yaw: 0, pitch: 0,
+};
+let brPhase = 0, ringA = 0, time = 0, boot = 0;
+let nod = 0, nodV = 0, onsetCd = 0;
+const tw = [0, 0]; let nextTwitch = 4;            // ear twitches [right, left]
+let glitch = 0, glitchY = 0, glitchCd = 5;
+let happyPulseUntil = 0;
+let bellA = 0, bellV = 0, prevYaw = 0, prevRoll = 0, prevPitch = 0;
+let COL = '#4fd8ff';
+
+/* ---------------------------------------------------------------- audio level */
+let source = 'sim', manual = 0, hostLevel = 0, hostTime = -1e9;
+let level = 0, slowLevel = 0;
+const HN = 64, hist = new Array(HN).fill(0);
+
+const sim = { t: 0, dur: .15, amp: .6, gap: 0 };
+function simStep(dt) {
+  if (sim.gap > 0) { sim.gap -= dt; return Math.random() * .03; }
+  sim.t += dt;
+  if (sim.t >= sim.dur) {
+    sim.t = 0; sim.dur = rand(.09, .26); sim.amp = rand(.35, 1);
+    if (Math.random() < .18) sim.gap = rand(.12, .5);
+  }
+  return sim.amp * Math.pow(Math.sin(Math.PI * sim.t / sim.dur), .6) * rand(.85, 1);
+}
+
+let mic = null;
+async function startMic() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const ac = new (window.AudioContext || window.webkitAudioContext)();
+    const an = ac.createAnalyser(); an.fftSize = 1024;
+    ac.createMediaStreamSource(stream).connect(an);
+    mic = { an, buf: new Float32Array(an.fftSize) };
+    showErr('');
+    return true;
+  } catch (e) { showErr('Microphone unavailable: ' + (e && e.message || e)); return false; }
+}
+function micLevel() {
+  if (!mic) return 0;
+  mic.an.getFloatTimeDomainData(mic.buf);
+  let s = 0; for (let i = 0; i < mic.buf.length; i++) s += mic.buf[i] * mic.buf[i];
+  return clamp((Math.sqrt(s / mic.buf.length) - .01) * 7);
+}
+
+/* ---------------------------------------------------------------- text-driven speech (no audio) */
+// Streamed chat text is "mouthed" at a reading pace: vowels open the mouth, m/b/p close it,
+// punctuation adds pauses, markdown symbols are ignored and code blocks are skipped quickly.
+const VIS = { a: [.9, 1], e: [.55, 1.15], i: [.45, 1.2], o: [.75, .7], u: [.45, .6], y: [.45, 1.1], w: [.35, .55],
+              m: [0, .9], b: [0, .9], p: [0, .9], f: [.12, 1], v: [.12, 1] };
+const SKIP = /[*#`_~>|\[\]{}()<\\=+^]/;
+let textCps = num('cps', 15);
+let tq = '', tTimer = 0, tOpen = 0, tWidth = 1, tActive = false, tEnded = false, tLastIn = -1e9, inCode = false, lastPunct = false;
+
+function pushText(chunk) {
+  if (chunk == null || chunk === '') return;
+  tq += String(chunk); tLastIn = performance.now(); tEnded = false;
+  if (!tActive) { tActive = true; if (demo) stopDemo(); if (state !== 'speaking') setState('speaking'); }
+}
+function stopText() { tq = ''; tTimer = 0; tOpen = 0; inCode = false; if (tActive) { tActive = false; if (state === 'speaking') setState('idle'); } }
+
+function stepText(dt, now) {
+  if (!tActive) return;
+  tTimer -= dt;
+  const speed = textCps * (1 + clamp((tq.length - 60) / 150, 0, 1.5));   // catch up if the stream gets far ahead
+  while (tTimer <= 0 && tq.length) {
+    const ch = tq[0]; tq = tq.slice(1);
+    if (ch === '`' && tq.startsWith('``')) { tq = tq.slice(2); inCode = !inCode; tOpen = 0; tTimer += .15; continue; }
+    if (inCode) { tOpen = 0; tTimer += .004; continue; }
+    if (SKIP.test(ch)) continue;
+    const c = ch.normalize('NFD')[0].toLowerCase();
+    let d = 1 / speed, punct = false;
+    if (/[.!?…]/.test(c)) { tOpen = 0; d = lastPunct ? .08 : .42; punct = true; }
+    else if (/[,;:]/.test(c)) { tOpen = 0; d = .22; punct = true; }
+    else if (c === '\n') { tOpen = 0; d = lastPunct ? .1 : .3; punct = true; }
+    else if (c === ' ' || c === '\t') { tOpen = Math.min(tOpen, .08); d *= .6; }
+    else if (VIS[c]) { [tOpen, tWidth] = VIS[c]; if ('aeiou'.includes(c)) d *= 1.35; }
+    else if (/[a-z0-9]/.test(c)) { tOpen = .2 + Math.random() * .1; tWidth = .95; }
+    else if (c.charCodeAt(0) > 127) { tOpen = .4; tWidth = 1; }
+    else continue;
+    lastPunct = punct;
+    tTimer += d;
+  }
+  if (!tq.length && tTimer <= 0) {
+    tOpen = 0;
+    if (tEnded || (now - tLastIn) > 1500) {
+      tActive = false; inCode = false;
+      if (state === 'speaking' && !(now < visUntil)) setState('idle');
+      notify({ type: 'speechDone' });
+    }
+  }
+}
+
+/* ---------------------------------------------------------------- TTS visemes (for later) */
+// Standard SAPI / System.Speech / Azure viseme IDs 0-21 -> [mouth open, mouth width]
+const VISEME_MAP = [
+  [0, 1], [.7, 1], [.95, 1], [.8, .8], [.55, 1.1], [.45, .8], [.4, 1.2], [.35, .55], [.7, .65], [.85, .85], [.7, .7],
+  [.85, 1], [.4, 1], [.35, .9], [.4, 1], [.15, 1.15], [.25, .8], [.2, 1], [.1, 1], [.25, 1], [.3, 1], [0, .9]];
+let visOpen = 0, visWidth = 1, visUntil = -1e9;
+function setViseme(id, durationMs) {
+  const v = VISEME_MAP[Math.max(0, Math.min(21, id | 0))];
+  visOpen = v[0]; visWidth = v[1];
+  visUntil = performance.now() + Math.max(+durationMs || 0, 120) + 350;
+  if (demo) stopDemo();
+  if (state !== 'speaking') setState('speaking');
+}
+let visWasActive = false;
+function stepViseme(now) {
+  const active = now < visUntil;
+  if (visWasActive && !active && !tActive) { if (state === 'speaking') setState('idle'); notify({ type: 'speechDone' }); }
+  visWasActive = active;
+  return active;
+}
+
+/* ---------------------------------------------------------------- per-cat idle quirks */
+// Each cat has its own little habits, played occasionally while idle (or on demand via Avatar.quirk()).
+const bump = (t, a, b, p = 1) => { const x = clamp((t - a) / (b - a)); return Math.pow(Math.sin(Math.PI * x), p); };
+const hold = (t, a, b, edge = .3) => { const r = (b - a) * edge; return clamp((t - a) / r) * clamp((b - t) / r); };
+const Q0 = () => ({ lid: 1, puff: 0, flare: 0, breath: 0, roll: 0, pitch: 0, gx: null, gy: null, pupil: 0, earFwd: 0, earBack: 0, ear: [0, 0], alert: 0, happy: 0, yaw: 0, yawRate: 4, lick: 0 });
+let Q = Q0(), quirk = null, nextQuirk = rand(5, 9), qYaw = 0;
+const QUIRKS = {
+  // Sid -----------------------------------------------------------
+  huff: { dur: 2.4, f(t, q) {                       // cheeks puff, eyes squeeze, head dips, big exhale
+    q.puff = bump(t, .1, 1.0); q.lid = 1 - .85 * hold(t, .25, 1.4); q.pitch = .09 * bump(t, .15, 1.1);
+    q.breath = bump(t, .8, 1.9); q.flare = bump(t, .8, 1.6); q.earBack = .45 * bump(t, .2, 1.6); } },
+  grumpyBlink: { dur: 2.6, f(t, q) { q.lid = 1 - hold(t, .2, 2.3, .35); q.pitch = .03 * hold(t, .2, 2.3); } },
+  sideGlare: { dur: 2.8, f(t, q) { const on = hold(t, .1, 2.6, .12); if (on > .05) { q.gx = .7; q.gy = .1; }
+    q.lid = 1 - .35 * on; q.roll = -.04 * on; q.ear = [.25 * on, 0]; } },
+  // Genie (from video: one ear swivels out and holds; turns whole head to stare over shoulder; slow blink -> stays drowsy)
+  earOut: { dur: 4.2, f(t, q) { const v = .95 * hold(t, .1, 4.0, .08); q.ear = q.dir > 0 ? [v, 0] : [0, v]; q.lid = 1 - .15 * v; } },
+  overShoulder: { dur: 4.0, f(t, q) { const on = hold(t, .1, 3.8, .15); q.yaw = .5 * q.dir * on; q.yawRate = 3;
+    if (on > .05) { q.gx = .9 * q.dir; q.gy = -.1; } q.ear = q.dir > 0 ? [.3 * on, 0] : [0, .3 * on]; q.lid = 1 - .2 * on; } },
+  drowsy: { dur: 5.5, f(t, q) { q.lid = 1 - (t < .5 ? bump(t, 0, 1) : t < 1.1 ? 1 : .7 * clamp((5.3 - t) / 4) + .0) * .95; q.pitch = .04 * hold(t, .3, 5.2); } },
+  sideEye: { dur: 3.2, f(t, q) { const dir = q.dir; const on = hold(t, .1, 3.0, .1); if (on > .05) { q.gx = .85 * dir; q.gy = .05; }
+    q.lid = 1 - .45 * on; q.roll = -.05 * dir * on; q.ear = dir > 0 ? [.35 * on, 0] : [0, .35 * on]; } },
+  earSwivel: { dur: 1.8, f(t, q) { const v = .7 * bump(t, .05, 1.6); q.ear = q.dir > 0 ? [v, 0] : [0, v]; } },
+  unimpressed: { dur: 2.4, f(t, q) { q.lid = 1 - .9 * hold(t, .3, 2.1, .4); q.pitch = -.04 * hold(t, .2, 2.2); q.roll = .05 * hold(t, .2, 2.2); } },
+  // Jess (from video: paw/face grooming with eyes closed + tongue; sharp head turns to track; glances away and back)
+  groom: { dur: 4.5, f(t, q) { const on = hold(t, .2, 4.2, .12); q.lid = 1 - .95 * on; q.pitch = .1 * on; q.roll = .12 * q.dir * on;
+    q.lick = on * Math.max(0, Math.sin(t * 13)); q.earBack = .2 * on; } },
+  track: { dur: 3.6, f(t, q) { const side = t < 1.6 ? q.dir : -q.dir; const on = hold(t, .05, 3.4, .05);
+    q.yaw = .45 * side * on; q.yawRate = 14; q.earFwd = on; q.alert = on; q.pupil = .5 * on; if (on > .05) { q.gx = .7 * side; q.gy = -.15; } } },
+  glanceAway: { dur: 1.6, f(t, q) { const on = hold(t, .05, 1.4, .1); q.yaw = .3 * q.dir * on; q.yawRate = 10; if (on > .05) { q.gx = .8 * q.dir; q.gy = 0; } } },
+  perk: { dur: 2.6, f(t, q) { const on = hold(t, .05, 2.0, .15); q.earFwd = on; q.alert = on; q.pupil = .45 * on;
+    q.roll = .14 * bump(t, .3, 2.0); q.gx = on > .3 ? .35 * q.dir : null; q.gy = on > .3 ? -.3 : null;
+    if (t > 2.05 && !q.flicked) { q.flicked = true; tw[0] = 1; setTimeout(() => { tw[1] = 1; }, 140); } } },
+  catKiss: { dur: 2.6, f(t, q) { q.lid = 1 - .95 * hold(t, .2, 2.3, .4); q.happy = .6 * hold(t, .2, 2.3); } },
+  earFlick: { dur: 1.2, f(t, q) { if (!q.done) { q.done = true; tw[q.dir > 0 ? 0 : 1] = 1; setTimeout(() => { tw[q.dir > 0 ? 0 : 1] = 1; }, 220); } } },
+  // classic -------------------------------------------------------
+  lookAround: { dur: 2.4, f(t, q) { const on = hold(t, .1, 2.2, .1); if (on > .05) { q.gx = t < 1.2 ? -.8 : .8; q.gy = -.2; } q.ear = [.2 * on, .2 * on]; } },
+};
+function startQuirk(name) {
+  const def = QUIRKS[name]; if (!def) return;
+  quirk = { name, t: 0, dur: def.dur, q: { dir: Math.random() < .5 ? -1 : 1 } };
+  notify({ type: 'quirk', value: name });
+}
+function stepQuirk(dt) {
+  Q = Q0();
+  if (quirk) {
+    quirk.t += dt;
+    if (quirk.t >= quirk.dur) { quirk = null; nextSacc = 0; }
+    else { const keep = quirk.q, base = Q0(); for (const k in base) keep[k] = base[k];
+           QUIRKS[quirk.name].f(quirk.t, keep); for (const k in base) Q[k] = keep[k]; }
+  } else if (state === 'idle' && !tActive) {
+    nextQuirk -= dt;
+    if (nextQuirk <= 0) { const list = cat.quirks || []; if (list.length) startQuirk(list[Math.floor(Math.random() * list.length)]); nextQuirk = rand(7, 15); }
+  }
+}
+
+/* ---------------------------------------------------------------- blink & gaze */
+let blinkT = -1, blinkDur = .15, blinkPlateau = 0, nextBlink = 2, doubleBlink = false, blinkF = 1;
+function scheduleBlink() {
+  const r = { idle: [2.5, 6], listening: [3, 6], thinking: [1.5, 4], speaking: [2, 4.5], sleep: [1e6, 1e6] }[state];
+  nextBlink = rand(r[0], r[1]);
+}
+function startBlink(slow = false) {
+  blinkT = 0; blinkDur = slow ? .9 : rand(.12, .17); blinkPlateau = slow ? .35 : 0;
+  scheduleBlink();
+  if (!slow && Math.random() < .15) doubleBlink = true;
+}
+function updateBlink(dt) {
+  nextBlink -= dt;
+  if (blinkT < 0 && nextBlink <= 0) startBlink(state === 'idle' && Math.random() < .3);
+  if (blinkT < 0) return 1;
+  blinkT += dt;
+  const x = blinkT / blinkDur;
+  if (x >= 1) { blinkT = -1; if (doubleBlink) { doubleBlink = false; nextBlink = .1; } return 1; }
+  const p = blinkPlateau, e = (1 - p) / 2;
+  if (x < e) return 1 - Math.sin(x / e * Math.PI / 2);
+  if (x > 1 - e) return Math.sin((x - (1 - e)) / e * Math.PI / 2);
+  return 0;
+}
+
+let gazeT = { x: 0, y: 0 }, nextSacc = 0, lookOverride = null;
+function updateGaze(dt, now) {
+  nextSacc -= dt;
+  if (lookOverride && now < lookOverride.until) gazeT = lookOverride;
+  else if (Q.gx != null) gazeT = { x: Q.gx, y: Q.gy ?? 0 };
+  else {
+    lookOverride = null;
+    if (nextSacc <= 0) {
+      switch (state) {
+        case 'idle': gazeT = { x: rand(-.8, .8), y: rand(-.4, .5) }; nextSacc = rand(1.2, 3.5); break;
+        case 'listening': gazeT = { x: rand(-.08, .08), y: rand(-.06, .06) }; nextSacc = rand(.4, 1.2); break;
+        case 'thinking': gazeT = Math.random() < .5 ? { x: rand(.5, .9), y: rand(-.85, -.5) } : { x: rand(-.9, -.5), y: rand(-.85, -.5) }; nextSacc = rand(1, 2.5); break;
+        case 'speaking': gazeT = Math.random() < .75 ? { x: rand(-.1, .1), y: rand(-.08, .08) } : { x: rand(-.6, .6), y: rand(-.3, .3) }; nextSacc = rand(.6, 1.8); break;
+        case 'sleep': gazeT = { x: 0, y: .3 }; nextSacc = 3; break;
+      }
+    }
+  }
+  S.gx = approach(S.gx, gazeT.x, 16, dt);   // fast, saccade-like
+  S.gy = approach(S.gy, gazeT.y, 16, dt);
+}
+
+/* ---------------------------------------------------------------- targets per state/mood */
+function targets(now) {
+  const t = { pupil: .45, earFwd: 0, earBack: 0, bright: .75, ring: .15, lid: 1, roll: 0, scan: 0, happy: 0,
+              hueShift: 0, breAmp: 1, breRate: .25, browY: 0, browIn: 0, browAsym: 0 };
+  switch (state) {
+    case 'listening': Object.assign(t, { pupil: .85, earFwd: 1, bright: .95, ring: .35, roll: .06, browY: -.5 }); break;
+    case 'thinking':  Object.assign(t, { pupil: .18, bright: .85, ring: 1.4, scan: 1, lid: .8, hueShift: 25, browY: .4, browIn: .4 }); break;
+    case 'speaking':  Object.assign(t, { pupil: .5, earFwd: .3, bright: .88, ring: .5, browY: -.2 }); break;
+    case 'sleep':     Object.assign(t, { pupil: .3, bright: .38, ring: .05, lid: .03, earBack: .35, breAmp: 1.8, breRate: .14, browY: .5 }); break;
+  }
+  switch (mood) {
+    case 'happy':   t.happy = 1; t.lid = Math.min(t.lid, .8); t.browY -= .3; break;
+    case 'curious': t.roll += .12; t.pupil = Math.min(1, t.pupil + .2); t.earFwd = Math.max(t.earFwd, .8); t.browAsym = 1; break;
+    case 'annoyed': t.earBack = Math.max(t.earBack, 1); t.lid = Math.min(t.lid, .5); t.pupil = Math.min(t.pupil, .25); t.browY = .8; t.browIn = 1; break;
+  }
+  if (now < happyPulseUntil && state !== 'sleep') { t.happy = 1; t.lid = Math.min(t.lid, .8); }
+  if (state === 'listening') t.pupil = clamp(t.pupil + level * .15);
+  // per-cat character: Genie's resting look is heavy-lidded, opening up when she's paying attention
+  const alert = state === 'listening' ? .7 : state === 'speaking' ? .4 : 0;
+  t.lid *= lerp(cat.lidBase, 1, alert);
+  t.browY += cat.browBias * (1 - alert);
+  t.pupil = clamp(t.pupil + Q.pupil); t.earFwd = clamp(t.earFwd + Q.earFwd); t.earBack = clamp(t.earBack + Q.earBack);
+  t.happy = Math.max(t.happy, Q.happy); t.roll += Q.roll;
+  return t;
+}
+
+/* ---------------------------------------------------------------- demo loop */
+let demo = null;
+const DEMO = [['idle', 3, 'neutral'], ['listening', 4, 'neutral'], ['thinking', 3.2, 'neutral'], ['speaking', 6, 'neutral'],
+              ['idle', 2.5, 'happy'], ['habits', 0, 'neutral'], ['speaking', 4, 'curious'], ['listening', 2.5, 'annoyed'], ['sleep', 4.5, 'neutral']];
+function startDemo() { demo = { i: -1, t: 0 }; if (source === 'off' || source === 'manual') setSource('sim'); nextDemo(); refreshPanel(); }
+function stopDemo() { demo = null; refreshPanel(); }
+function nextDemo() {
+  demo.i = (demo.i + 1) % DEMO.length; const [s, d, m] = DEMO[demo.i];
+  if (s === 'habits') {            // play every idle habit of the current cat, one after another
+    setState('idle'); setMood(m); quirk = null; demo.habits = Avatar.quirks(); demo.gap = .6; demo.t = 1e9;
+  } else { demo.habits = null; demo.t = d; setState(s); setMood(m); }
+}
+
+/* ---------------------------------------------------------------- update */
+function update(dt, now) {
+  // audio level: host input wins if fresh, else debug source
+  stepText(dt, now);
+  const visActive = stepViseme(now);
+  const mouthSrc = visActive ? visOpen : tActive ? tOpen : null;
+  let raw = 0;
+  if (now - hostTime < 600) raw = hostLevel;
+  else if (mouthSrc != null) raw = mouthSrc * .8;
+  else if (cfg.debug || demo) {
+    if (source === 'sim') raw = (state === 'speaking' || state === 'listening') ? simStep(dt) * (state === 'listening' ? .8 : 1) : 0;
+    else if (source === 'mic') raw = micLevel();
+    else if (source === 'manual') raw = manual;
+  }
+  level = approach(level, raw, raw > level ? 30 : 9, dt);
+  slowLevel = approach(slowLevel, level, 3, dt);
+  onsetCd -= dt;
+  if (state === 'speaking' && level - slowLevel > .22 && onsetCd <= 0) { nodV += rand(.6, 1.1); onsetCd = .25; }
+  hist.push(level); hist.shift();
+
+  stepQuirk(dt);
+  const t = targets(now);
+  S.pupil = approach(S.pupil, t.pupil, 4, dt);
+  S.earFwd = approach(S.earFwd, t.earFwd, 5, dt);
+  S.earBack = approach(S.earBack, t.earBack, 5, dt);
+  S.bright = approach(S.bright, t.bright + (state === 'speaking' ? level * .15 : 0), 3, dt);
+  S.ring = approach(S.ring, t.ring, 2, dt);
+  S.lid = approach(S.lid, t.lid, 6, dt);
+  S.roll = approach(S.roll, t.roll, 2.5, dt);
+  S.scan = approach(S.scan, t.scan, 3, dt);
+  S.happy = approach(S.happy, t.happy, 5, dt);
+  S.hueShift = approach(S.hueShift, t.hueShift, 1.5, dt);
+  S.breAmp = approach(S.breAmp, t.breAmp, 1, dt);
+  S.breRate = approach(S.breRate, t.breRate, 1, dt);
+  S.browY = approach(S.browY, t.browY, 5, dt);
+  S.browIn = approach(S.browIn, t.browIn, 5, dt);
+  S.browAsym = approach(S.browAsym, t.browAsym, 5, dt);
+  S.alert = approach(S.alert, clamp((state === 'listening' ? 1 : state === 'speaking' ? .5 : 0) + (mood === 'curious' ? .3 : 0) - (mood === 'annoyed' ? .5 : 0) + Q.alert), 4, dt);
+  brPhase += dt * TAU * S.breRate;
+
+  if (mouthSrc != null && now - hostTime >= 600) {
+    S.mouth = approach(S.mouth, mouthSrc, 28, dt);
+    S.mouthW = approach(S.mouthW, visActive ? visWidth : tWidth, 20, dt);
+  } else {
+    S.mouth = approach(S.mouth, state === 'speaking' ? clamp(level * 1.15) : Q.lick * .45, 22, dt);
+    S.mouthW = .8 + .35 * noise(time * 6, 3);
+  }
+  S.whisk = approach(S.whisk, state === 'speaking' ? level : state === 'listening' ? level * .4 : 0, 10, dt);
+
+  updateGaze(dt, now);
+  blinkF = updateBlink(dt);
+
+  for (let i = 0; i < 2; i++) tw[i] = Math.max(0, tw[i] - dt * 2.5);
+  nextTwitch -= dt;
+  if (nextTwitch <= 0) {
+    if (state !== 'sleep' || Math.random() < .3) tw[Math.random() < .5 ? 0 : 1] = 1;
+    nextTwitch = state === 'listening' ? rand(2, 5) : rand(3.5, 9);
+  }
+
+  nodV += (-140 * nod - 11 * nodV) * dt;  // damped spring for nods
+  nod += nodV * dt;
+
+  ringA += dt * S.ring;
+
+  // collar bell: damped pendulum pushed by head yaw/roll/nod changes
+  if (dt > 0) {
+    const push = ((S.yaw - prevYaw) * 1.2 + (S.roll - prevRoll) * 2) / dt + nodV * .6 + (S.pitch - prevPitch) / dt * .3;
+    bellV += (-70 * bellA - 2.2 * bellV) * dt - push * dt * 9;
+    bellA = clamp(bellA + bellV * dt, -.7, .7);
+  }
+  prevYaw = S.yaw; prevRoll = S.roll; prevPitch = S.pitch;
+  qYaw = approach(qYaw, Q.yaw, Q.yawRate, dt);
+  S.yaw = approach(S.yaw, S.gx * .22 + noise(time * .4, 1) * .04, 3, dt);
+  S.pitch = approach(S.pitch, S.gy * .14 + noise(time * .35, 5) * .03, 3, dt);
+
+  glitchCd -= dt; glitch -= dt;
+  if (glitchCd <= 0) { glitch = rand(.05, .12); glitchY = Math.random(); glitchCd = state === 'thinking' ? rand(1.2, 3) : rand(4, 10); }
+
+  if (demo) {
+    nextQuirk = 99;                // no random habits on top of the demo's own
+    if (demo.habits) {
+      if (!quirk) {
+        if (demo.habits.length) { demo.gap -= dt; if (demo.gap <= 0) { startQuirk(demo.habits.shift()); demo.gap = .7; } }
+        else { demo.habits = null; nextDemo(); }
+      }
+    } else { demo.t -= dt; if (demo.t <= 0) nextDemo(); }
+  }
+}
+
+/* ---------------------------------------------------------------- projection */
+let PS = 1, PSb = 1, PCX = 0, PCY = 0, LW = 1, cy_ = 1, sy_ = 0, cp_ = 1, sp_ = 0, cr_ = 1, sr_ = 0;
+function computeProjection() {
+  const br = Math.sin(brPhase) * S.breAmp;
+  const eb = 1 - Math.pow(1 - boot, 3);
+  const base = Math.min(W, H) / 2 / 1.78;
+  PSb = base * DPR;
+  PS = PSb * (1 + .01 * br) * (.94 + .06 * eb);
+  PCX = W / 2 * DPR;
+  PCY = (H / 2 + base * .02) * DPR - br * .004 * PS;
+  LW = Math.max(DPR * .8, PSb / 170);
+  const yaw = S.yaw + qYaw, pit = S.pitch + nod + Q.pitch, rol = S.roll + noise(time * .3, 9) * .02;
+  cy_ = Math.cos(yaw); sy_ = Math.sin(yaw); cp_ = Math.cos(pit); sp_ = Math.sin(pit); cr_ = Math.cos(rol); sr_ = Math.sin(rol);
+}
+function proj(x, y, z = 0) {
+  if (Q.puff) x *= 1 + Q.puff * .07 * Math.max(0, 1 - Math.abs(y - .25) * 1.6);
+  const x1 = x * cy_ + z * sy_, z1 = -x * sy_ + z * cy_;
+  const y1 = y * cp_ + z1 * sp_, z2 = -y * sp_ + z1 * cp_;
+  const p = 4 / (4 - z2);
+  const X = x1 * p, Y = y1 * p;
+  return [PCX + (X * cr_ - Y * sr_) * PS, PCY + (X * sr_ + Y * cr_) * PS];
+}
+
+/* ---------------------------------------------------------------- drawing primitives */
+function path(pp, closed) {
+  octx.beginPath(); octx.moveTo(pp[0][0], pp[0][1]);
+  for (let i = 1; i < pp.length; i++) octx.lineTo(pp[i][0], pp[i][1]);
+  if (closed) octx.closePath();
+}
+function dots(pp, closed, w) {
+  const sp = Math.max(3 * DPR, LW * 4.2), r = Math.max(.7 * DPR, w * .7 * LW);
+  octx.beginPath();
+  const n = pp.length, segs = closed ? n : n - 1;
+  let carry = 0;
+  for (let i = 0; i < segs; i++) {
+    const a = pp[i], b = pp[(i + 1) % n];
+    const dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy);
+    let d = carry;
+    while (d < L) { const x = a[0] + dx * d / L, y = a[1] + dy * d / L; octx.moveTo(x + r, y); octx.arc(x, y, r, 0, TAU); d += sp; }
+    carry = d - L;
+  }
+  octx.fill();
+}
+function drawPP(pp, a = 1, w = 1.4, closed = false, fillA = 0) {
+  const B = S.bright;
+  if (fillA > 0) { path(pp, true); octx.globalAlpha = clamp(fillA * B); octx.fill(); }
+  octx.globalAlpha = clamp(a * B);
+  if (cfg.style === 'points') return dots(pp, closed, w);
+  path(pp, closed); octx.lineWidth = w * LW; octx.stroke();
+}
+function line3(pts, a, w, closed, fillA) {
+  const pp = pts.map(q => proj(q[0], q[1], q[2] || 0));
+  drawPP(pp, a, w, closed, fillA);
+  return pp;
+}
+function dot3(p, r, a) {
+  const q = proj(p[0], p[1], p[2] || 0);
+  octx.globalAlpha = clamp(a * S.bright);
+  octx.beginPath(); octx.arc(q[0], q[1], r * LW, 0, TAU); octx.fill();
+}
+function circle3(c, r, n = 28) {
+  const pts = [];
+  for (let i = 0; i < n; i++) { const a = i / n * TAU; pts.push([c[0] + Math.cos(a) * r, c[1] + Math.sin(a) * r, c[2]]); }
+  return pts;
+}
+
+/* ---------------------------------------------------------------- cat presets (face geometry) */
+const MESH = [['fh', 'ei'], ['ei', 'nt'], ['eo', 'tp'], ['tp', 'er'], ['fh', 'er'], ['eo', 'ck'], ['ck', 'mz'], ['nt', 'cb'],
+              ['cb', 'ck'], ['cb', 'ei'], ['cb', 'mz'], ['mz', 'ch'], ['ck', 'jw'], ['jw', 'ch'], ['cb', 'eo']];
+const mirrorLoop = R => [...R, ...R.slice(1, -1).reverse().map(mx)].map(p => [p[0], p[1], 0]);
+function chaikin(pts, it) {
+  for (let k = 0; k < it; k++) {
+    const out = [];
+    for (let i = 0; i < pts.length; i++) {
+      const a = pts[i], b = pts[(i + 1) % pts.length];
+      out.push([a[0] * .75 + b[0] * .25, a[1] * .75 + b[1] * .25, 0], [a[0] * .25 + b[0] * .75, a[1] * .25 + b[1] * .75, 0]);
+    }
+    pts = out;
+  }
+  return pts;
+}
+
+const CATS = {
+  classic: {
+    name: 'classic',
+    head: mirrorLoop([[0, -.58], [.2, -.6], [.68, -.4], [.8, -.18], [.86, .05], [.97, .19], [.85, .26], [.92, .38], [.75, .46], [.57, .65], [.3, .8], [0, .85]]),
+    lm: { fh: [0, -.36, .1], nt: [0, .2, .42], ei: [.15, -.02, .2], eo: [.5, -.14, .12], ck: [.74, .2, .05],
+          mz: [.22, .36, .33], ch: [0, .72, .15], tp: [.62, -.22, .05], er: [.44, -.5, .02], jw: [.5, .6, .05], cb: [.36, .18, .25] },
+    ear: { ib: [.2, -.6, 0], ob: [.68, -.4, 0], tip: [.6, -1.06, 0], round: 0 },
+    eye: { cx: .33, cy: -.06, z: .18, hw: .17, h: .125, rot: -.2, exp: .85, irisR: .1, irisHue: null },
+    nose: { hw: .075, y0: .2, y1: .29 },
+    whiskers: [[[.2, .34], [1.04, .17]], [[.21, .38], [1.1, .33]], [[.2, .42], [1.02, .5]]],
+    lidBase: 1, browBias: 0, collar: false, hue: 190, quirks: ['lookAround'],
+    markings() {
+      line3([[0, -.57, .08], [0, -.38, .12]], .35, 1.1);
+      line3([[-.075, -.56, .08], [-.055, -.41, .11]], .3, 1);
+      line3([[.075, -.56, .08], [.055, -.41, .11]], .3, 1);
+      for (const s of [1, -1]) {
+        line3([[s * .17, -.53, .08], [s * .13, -.46, .09], [s * .17, -.39, .09]], .22, 1);
+        line3([[s * .56, .06, .08], [s * .8, .02, .03]], .25, 1);
+        line3([[s * .58, .15, .08], [s * .84, .15, .03]], .25, 1);
+      }
+    },
+  },
+
+  // Genie: solid blue-grey. Large upright ears with gently rounded tips set wide on the head corners,
+  // flattish top, big full jowls (widest below the eyes), solid chin. Gold-green eyes under flat heavy lids that
+  // droop towards the nose ("unimpressed"), paler silvery forehead patch, long straight nose bridge, small downturned mouth.
+  genie: {
+    name: 'genie',
+    head: chaikin(mirrorLoop([[0, -.6], [.2, -.61], [.42, -.57], [.62, -.46], [.76, -.28], [.86, -.06], [.94, .14],
+                              [.96, .32], [.9, .48], [.76, .61], [.56, .72], [.34, .8], [.16, .84], [0, .85]]), 1),
+    lm: { fh: [0, -.38, .1], nt: [0, .19, .42], ei: [.14, -.01, .2], eo: [.47, -.07, .12], ck: [.88, .24, .05],
+          mz: [.22, .36, .33], ch: [0, .72, .15], tp: [.68, -.24, .05], er: [.46, -.55, .02], jw: [.66, .62, .05], cb: [.4, .2, .25] },
+    ear: { ib: [.2, -.61, 0], ob: [.76, -.36, 0], tip: [.71, -1.04, 0], round: .13 },
+    eye: { cx: .3, cy: -.04, z: .18, hw: .15, h: .135, rot: -.06, exp: .7, irisR: .105, irisHue: 66, lidCap: [.36, .68], heavy: true },
+    nose: { hw: .068, y0: .19, y1: .27 },
+    whiskers: [[[.2, .35], [1.12, .22]], [[.21, .39], [1.17, .38]], [[.21, .43], [1.1, .55]], [[.19, .46], [.96, .7]]],
+    lidBase: .94, browBias: .3, quirks: ['earOut', 'earOut', 'overShoulder', 'drowsy', 'sideEye', 'unimpressed'], collar: false, hue: 212, sat: 38, light: 74, earBackScale: .5,
+    markings() {
+      const lift = -S.alert * .035;
+      // paler silvery patch on the forehead between the ears
+      line3([[-.24, -.6, .06], [-.15, -.48, .08], [0, -.42, .1], [.15, -.48, .08], [.24, -.6, .06]], .42, 1.1, false);
+      for (const x of [-.12, -.04, .04, .12]) line3([[x, -.59, .07], [x * .8, -.5, .09]], .2, .9);
+      // darker shading lines over the brows, sloping down towards the nose
+      for (const s of [1, -1]) {
+        line3([[s * .14, -.14 + lift, .2], [s * .24, -.19 + lift, .19], [s * .36, -.21 + lift, .17], [s * .48, -.17 + lift, .13]], .5, 1.4);
+        // long straight nose bridge
+        line3([[s * .045, -.08, .3], [s * .055, .08, .38], [s * .065, .18, .41]], .3, 1);
+        // full jowls
+        line3([[s * .62, -.06, .08], [s * .8, .14, .06], [s * .84, .34, .05], [s * .74, .52, .06], [s * .54, .64, .08]], .2, 1);
+        // whisker pads
+        line3([[s * .02, .32, .4], [s * .1, .37, .38], [s * .19, .37, .36], [s * .25, .32, .33]], .4, 1.1);
+      }
+      // small downturned mouth corners + chin
+      line3([[-.14, .44, .33], [-.1, .45, .35]], .4, 1);
+      line3([[.14, .44, .33], [.1, .45, .35]], .4, 1);
+      line3([[-.11, .62, .3], [0, .67, .32], [.11, .62, .3]], .25, 1);
+    },
+  },
+
+  // Jess: brown mackerel tabby. Big tall wide-set ears with pointed, tufted tips; fuller face with round cheeks and a
+  // broad white chin; 4-5 bold parallel forehead stripes; dark eyeliner sweeping back from each eye + cheek stripe;
+  // pale spectacles; skeptical, slightly heavy-lidded yellow-green eyes; terracotta nose; spotted whisker pads.
+  jess: {
+    name: 'jess',
+    head: chaikin(mirrorLoop([[0, -.6], [.2, -.61], [.42, -.57], [.62, -.46], [.75, -.28], [.83, -.07], [.89, .13],
+                              [.91, .3], [.85, .46], [.72, .59], [.52, .7], [.3, .78], [.14, .82], [0, .83]]), 1),
+    lm: { fh: [0, -.38, .1], nt: [0, .2, .42], ei: [.14, -.02, .2], eo: [.47, -.1, .12], ck: [.84, .22, .05],
+          mz: [.22, .36, .33], ch: [0, .72, .15], tp: [.68, -.26, .05], er: [.44, -.55, .02], jw: [.62, .6, .05], cb: [.38, .2, .25] },
+    ear: { ib: [.16, -.61, 0], ob: [.73, -.4, 0], tip: [.66, -1.2, 0], round: .05, tuft: true },
+    eye: { cx: .3, cy: -.05, z: .18, hw: .16, h: .135, rot: -.1, exp: .7, irisR: .105, irisHue: 60, lidCap: [.5, .72], heavy: true },
+    nose: { hw: .075, y0: .2, y1: .29, col: [14, 70, 66] },
+    whiskers: [[[.2, .34], [1.15, .15]], [[.21, .38], [1.22, .32]], [[.21, .42], [1.15, .5]], [[.19, .46], [1.0, .68]]],
+    lidBase: .95, browBias: .15, quirks: ['groom', 'groom', 'track', 'glanceAway', 'glanceAway', 'perk', 'earFlick', 'catKiss'], collar: false, hue: 34, sat: 48, light: 64, mark: [22, 45, 36],
+    markings() {
+      const lift = -S.alert * .03;
+      // bold parallel forehead stripes running up between the ears
+      for (const x of [-.15, -.075, 0, .075, .15]) line3([[x * 1.25, -.6, .08], [x * 1.1, -.45, .1], [x * .8, -.3, .13]], .85, 1.9);
+      for (const s of [1, -1]) {
+        // eyeliner sweeping back from the outer eye corner, and the cheek stripe below
+        line3([[s * .45, -.09, .12], [s * .6, -.12, .08], [s * .78, -.07, .04]], .85, 2);
+        line3([[s * .38, .09, .16], [s * .55, .11, .1], [s * .7, .2, .06], [s * .8, .33, .04]], .7, 1.8);
+        // brow line (skeptical)
+        line3([[s * .15, -.18 + lift, .2], [s * .3, -.22 + lift, .18], [s * .45, -.19 + lift, .13]], .45, 1.3);
+        // pale spectacles under the eye
+        line3([[s * .16, .08, .2], [s * .3, .12, .18], [s * .45, .07, .14]], .3, 1);
+        // white muzzle + rows of whisker-pad spots
+        line3([[s * .09, .25, .4], [s * .2, .29, .36], [s * .27, .38, .32], [s * .22, .5, .3], [s * .1, .57, .3]], .35, 1.1);
+        for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) dot3([s * (.1 + c * .05), .32 + r * .04 - c * .006, .34], 1.3, .85);
+      }
+      // broad white chin
+      line3([[-.13, .58, .3], [0, .64, .32], [.13, .58, .3]], .35, 1.1);
+    },
+  },
+
+  // Sid: ginger, big broad very round head, small rounded ears folded low at the sides,
+  // very heavy-lidded eyes under heavy brows (permanently grumpy), short flat muzzle, small nose, pouty lower lip.
+  // Sid: ginger "bowling ball" head, wider than tall with a flat broad top and no neck, sunk into a chest ruff.
+  // Tiny folded caps for ears on the top corners (one scar-notched), flat heavy lids sloping down to the nose,
+  // frown creases, short flat muzzle, small broad nose, pink pouty lower lip, long drooping whiskers.
+  sid: {
+    name: 'sid',
+    head: chaikin(mirrorLoop([[0, -.6], [.3, -.6], [.55, -.55], [.76, -.42], [.9, -.22], [.98, 0], [1.0, .2],
+                              [.96, .4], [.86, .57], [.68, .7], [.45, .79], [.22, .83], [0, .84]]), 1),
+    lm: { fh: [0, -.4, .1], nt: [0, .17, .42], ei: [.15, 0, .2], eo: [.44, -.03, .12], ck: [.9, .2, .05],
+          mz: [.2, .33, .33], ch: [0, .7, .15], tp: [.76, -.22, .05], er: [.62, -.5, .02], jw: [.66, .6, .05], cb: [.4, .2, .25] },
+    ear: { ib: [.47, -.58, 0], ob: [.92, -.2, 0], tip: [.95, -.74, 0], round: 0, fold: true, notch: -1,
+           flap: [[.55, -.55, .04], [.64, -.55, .04], [.72, -.48, .04], [.77, -.37, .04], [.82, -.41, .04], [.86, -.36, .04]] },
+    eye: { cx: .3, cy: -.02, z: .18, hw: .135, h: .13, rot: 0, exp: .7, irisR: .1, irisHue: 62, lidCap: [.12, .5], heavy: true },
+    nose: { hw: .07, y0: .16, y1: .24 },
+    whiskers: [[[.19, .36], [1.08, .38]], [[.2, .4], [1.1, .55]], [[.2, .44], [1.0, .72]], [[.18, .47], [.86, .86]]],
+    lidBase: .9, browBias: .5, quirks: ['huff', 'huff', 'grumpyBlink', 'sideGlare'], collar: false, hue: 32, earBackScale: .3,
+    markings() {
+      const lift = -S.alert * .04;
+      // fur wisps on the flat top of the head
+      for (const x of [-.24, -.1, .04, .18]) line3([[x, -.6, .05], [x + .02, -.67, .05]], .3, 1);
+      // ginger tabby lines converging down the forehead
+      for (const x of [-.13, -.045, .045, .13]) line3([[x * 1.3, -.58, .08], [x, -.42, .1], [x * .55, -.3, .13]], .3, 1);
+      // frown creases between the eyes (soften when he perks up)
+      for (const s of [1, -1]) line3([[s * .06, -.25, .2], [s * .045, -.17, .21], [s * .05, -.09, .22]], .45 * (1 - S.alert * .6), 1.1);
+      for (const s of [1, -1]) {
+        // heavy brow ridge sloping down towards the nose
+        line3([[s * .12, -.12 + lift, .2], [s * .22, -.18 + lift, .19], [s * .34, -.205 + lift, .17], [s * .46, -.17 + lift, .13]], .55, 1.6);
+        // big jowls
+        line3([[s * .64, -.12, .08], [s * .82, .08, .06], [s * .86, .3, .05], [s * .76, .48, .06], [s * .56, .6, .08]], .2, 1);
+        // puffy whisker pads
+        line3([[s * .02, .3, .4], [s * .1, .355, .38], [s * .19, .35, .36], [s * .25, .3, .33]], .45, 1.1);
+      }
+      // chest ruff: he has no neck, the head sinks into fluff
+      const ruff = [];
+      for (let k = 0; k <= 24; k++) {
+        const u = -1 + k / 12, zig = (k % 2 ? .04 : -.01);
+        ruff.push([u * .88, .66 + .34 * (1 - u * u) + zig, 0]);
+      }
+      line3(ruff, .32, 1);
+      // signature pink pouty lower lip (moves with the jaw)
+      const dy = S.mouth * .17;
+      octx.strokeStyle = octx.fillStyle = 'hsl(350, 80%, 76%)';
+      line3([[-.075, .455 + dy, .38], [0, .44 + dy, .39], [.075, .455 + dy, .38], [.06, .5 + dy, .38], [0, .525 + dy, .38], [-.06, .5 + dy, .38]], .85, 1.2, true, .3);
+      octx.strokeStyle = octx.fillStyle = COL;
+      line3([[-.1, .66, .3], [0, .7, .32], [.1, .66, .3]], .22, 1);
+    },
+  },
+};
+let cat = CATS[cfg.cat] || CATS.classic;
+const headIn = c => c.head.map(p => [p[0] * .92, p[1] * .92 + .02, .05]);
+for (const k in CATS) CATS[k].headIn = headIn(CATS[k]);
+if (!cfg.userHue) cfg.hue = cat.hue;
+
+function drawEar(side, twv) {
+  const { ib, ob, tip: tip0, round } = cat.ear;
+  const pv = [(ib[0] + ob[0]) / 2, (ib[1] + ob[1]) / 2, 0];
+  const swivel = S.scan * .22 * Math.sin(time * 1.7) * side;
+  const eb = S.earBack * (cat.earBackScale ?? 1);
+  const th = Q.ear[side > 0 ? 0 : 1] * .9 - .16 * S.earFwd + .75 * eb + twv * .3 * Math.sin(twv * 25) + swivel;
+  const len = (1 + .06 * S.earFwd) * (1 - .32 * eb);
+  const vx = (tip0[0] - pv[0]) * len, vy = (tip0[1] - pv[1]) * len;
+  const tip = [pv[0] + vx * Math.cos(th) - vy * Math.sin(th), pv[1] + vx * Math.sin(th) + vy * Math.cos(th), .12 * S.earFwd - .1 * S.earBack];
+  const f = side < 0 ? mx : p => p;
+  if (cat.ear.fold) {
+    // soft folded ear: a rounded hump (quadratic curve with the tip as its control point)
+    const hump = [];
+    for (let k = 0; k <= 14; k++) { const u = k / 14, iu = 1 - u; hump.push([iu * iu * ib[0] + 2 * iu * u * tip[0] + u * u * ob[0], iu * iu * ib[1] + 2 * iu * u * tip[1] + u * u * ob[1], 2 * iu * u * tip[2]]); }
+    if (cat.ear.notch && side === cat.ear.notch) {          // battle-scar notch
+      for (const k of [6, 7]) hump[k] = lp3(hump[k], pv, .3);
+    }
+    line3(hump.map(f), 1, 1.6);
+    if (cat.ear.flap) {                                       // the folded-over flap, rotating with the ear
+      const rot = p => { const vx = (p[0] - pv[0]) * len, vy = (p[1] - pv[1]) * len, a = th * .6;
+        return [pv[0] + vx * Math.cos(a) - vy * Math.sin(a), pv[1] + vx * Math.sin(a) + vy * Math.cos(a), .04]; };
+      line3(cat.ear.flap.map(rot).map(f), .75, 1.3);
+      dot3(f(rot(cat.ear.flap[3])), 1.5, .8);
+    } else dot3(f(lp3(pv, tip, .5)), 1.4, .7);
+    return;
+  }
+  if (round > 0) {
+    const a = lp3(tip, ib, round), b = lp3(tip, ob, round), c = lp3(tip, pv, round * .25);
+    line3([ib, a, lp3(a, c, .6), c, lp3(b, c, .6), b, ob].map(f), 1, 1.6);
+  } else line3([ib, tip, ob].map(f), 1, 1.6);
+  if (cat.ear.tuft) { const tp = round > 0 ? lp3(tip, pv, round * .25) : tip; for (const a of [-.25, 0, .25]) line3([tp, [tp[0] + Math.sin(a) * .07, tp[1] - Math.cos(a) * .07, tp[2]]].map(f), .7, 1); }
+  const i1 = lp3(lp3(ib, ob, .22), tip, .12), i2 = lp3(lp3(ib, ob, .78), tip, .12), it = lp3(pv, tip, .8);
+  line3([i1, it, i2].map(f), .45, 1.1);
+  for (const u of [.4, .6]) line3([lp3(lp3(ib, ob, u), tip, .2), lp3(lp3(ib, ob, u + .03), tip, .52)].map(f), .25, 1);
+  dot3(f(tip), 1.6, .8);
+}
+
+function drawEye(side) {
+  const { cx, cy, z, hw, h, rot, exp, irisR, irisHue, lidCap, heavy } = cat.eye;
+  const open = clamp(S.lid * blinkF * Q.lid);
+  const low = 1 - 1.55 * S.happy;
+  const N = 16, up = [], lo = [];
+  const cr = Math.cos(rot), sr = Math.sin(rot);
+  const T = (x, y) => [side * (cx + x * cr - y * sr), cy + x * sr + y * cr, z];
+  for (let i = 0; i <= N; i++) {
+    const t = i / N, sx = -hw + 2 * hw * t, sn = Math.pow(Math.sin(Math.PI * t), exp);
+    const ly = h * low * sn * .85;
+    let top = h * sn * (1 + .1 * t);
+    if (lidCap) { const cap = h * lerp(lerp(lidCap[0], lidCap[1], t), 1.3, S.alert); top = Math.min(top, cap * Math.pow(Math.sin(Math.PI * t), .35)); }
+    const uy = lerp(ly, -top, open);
+    up.push(T(sx, uy)); lo.push(T(sx, ly));
+  }
+  const outline = [...up, ...lo.slice(1, -1).reverse()];
+  const pp = outline.map(q => proj(q[0], q[1], q[2]));
+
+  if (open > .04 && S.happy < .9) {
+    octx.save();
+    path(pp, true); octx.clip();
+    const ic = [side * cx + S.gx * .075, cy + S.gy * .05 + .005, z + .02];
+    if (irisHue != null) { const ih = `hsl(${irisHue}, 90%, 62%)`; octx.strokeStyle = ih; octx.fillStyle = ih; }
+    line3(circle3(ic, irisR), .75, 1.2, true, irisHue != null ? .2 : .14);
+    line3(circle3(ic, irisR * .62, 20), .3, .9, true);
+    const spokes = 10;
+    for (let k = 0; k < spokes; k++) {
+      const a = k / spokes * TAU + time * .1;
+      line3([[ic[0] + Math.cos(a) * irisR * .67, ic[1] + Math.sin(a) * irisR * .67, ic[2]], [ic[0] + Math.cos(a) * irisR * .96, ic[1] + Math.sin(a) * irisR * .96, ic[2]]], .22, .8);
+    }
+    octx.strokeStyle = COL; octx.fillStyle = COL;
+    const rx = .012 + S.pupil * .065, ry = .098, pup = [];
+    for (let k = 0; k < 24; k++) { const a = k / 24 * TAU; pup.push([ic[0] + Math.cos(a) * rx, ic[1] + Math.sin(a) * ry, ic[2] + .01]); }
+    const ppp = pup.map(q => proj(q[0], q[1], q[2]));
+    octx.globalCompositeOperation = 'destination-out';
+    octx.globalAlpha = 1; path(ppp, true); octx.fill();
+    octx.globalCompositeOperation = 'source-over';
+    drawPP(ppp, .9, 1.1, true);
+    dot3([ic[0] - .035, ic[1] - .04, ic[2] + .02], 2.2, 1);
+    dot3([ic[0] + .03, ic[1] + .045, ic[2] + .02], 1.1, .6);
+    octx.restore();
+  }
+  drawPP(pp, 1, 1.6, true);
+  if (heavy) drawPP(up.map(q => proj(q[0], q[1], q[2])), .9, 2.6, false);
+
+  // brow mark
+  const asym = side > 0 ? -S.browAsym * .5 : S.browAsym * .2;
+  const by = S.browY + asym;
+  const brow = [[.17, -.25 + S.browIn * .05 + by * .03, .15], [.33, -.3 + by * .035, .14], [.48, -.28 + by * .02, .1]];
+  line3(brow.map(p => [side * p[0], p[1], p[2]]), .35, 1.1);
+}
+
+function drawMuzzle() {
+  // nose
+  const n = cat.nose;
+  if (n.col) { const nc = `hsl(${n.col[0]}, ${n.col[1]}%, ${n.col[2]}%)`; octx.strokeStyle = octx.fillStyle = nc; }
+  line3([[-n.hw, n.y0, .42], [n.hw, n.y0, .42], [0, n.y1, .44]], 1, 1.5, true, n.col ? .45 : .28);
+  octx.strokeStyle = octx.fillStyle = COL;
+  line3([[0, n.y1, .44], [0, .365, .4]], .8, 1.3);
+  // mouth
+  const op = S.mouth, mw = S.mouthW, smile = S.happy * .035;
+  const cornerY = .415 - smile + op * .03;
+  const Wr = [[0, .365, .4], [.055 * mw + .01, .42 + op * .02, .38], [.13 * mw + .02, cornerY, .34]];
+  line3(Wr, .95, 1.4); line3(Wr.map(mx), .95, 1.4);
+  if (op > .03) {
+    const jaw = [];
+    for (let k = 0; k <= 12; k++) {
+      const u = k / 12, x = lerp(.075 * mw, -.075 * mw, u);
+      jaw.push([x, .425 + .2 * op * Math.sin(Math.PI * u), .38]);
+    }
+    const poly = [[-.06 * mw - .005, .425, .38], [0, .37, .4], [.06 * mw + .005, .425, .38], ...jaw];
+    const pp = poly.map(q => proj(q[0], q[1], q[2]));
+    path(pp, true); octx.globalAlpha = clamp(.18 * S.bright); octx.fill();
+    line3(jaw, .9, 1.3);
+    if (op > .35) line3([[-.04 * mw, .425 + .17 * op, .37], [0, .425 + .12 * op, .37], [.04 * mw, .425 + .17 * op, .37]], .35, 1);
+  }
+  if (Q.lick > .05) {                                       // grooming tongue
+    const L = Q.lick, ty = .43 + S.mouth * .19;
+    octx.strokeStyle = octx.fillStyle = 'hsl(350, 80%, 76%)';
+    line3([[-.035, ty, .38], [-.03, ty + .05 * L, .39], [0, ty + .07 * L, .39], [.03, ty + .05 * L, .39], [.035, ty, .38]], .9, 1.2, true, .35);
+    octx.strokeStyle = octx.fillStyle = COL;
+  }
+  // whisker pads
+  for (const side of [1, -1]) for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++)
+    dot3([side * (.1 + c * .045), .33 + r * .035 - c * .005, .36], 1.1, .5);
+  // whiskers
+  const WH = cat.whiskers;
+  for (const side of [1, -1]) {
+    WH.forEach(([o, e], i) => {
+      const c = [(o[0] + e[0]) / 2, (o[1] + e[1]) / 2 - .05 + i * .02];
+      const pts = [];
+      for (let k = 0; k <= 16; k++) {
+        const u = k / 16, iu = 1 - u;
+        let x = iu * iu * o[0] + 2 * iu * u * c[0] + u * u * e[0];
+        let y = iu * iu * o[1] + 2 * iu * u * c[1] + u * u * e[1];
+        y += (S.whisk * .04 * Math.sin(u * 8 - time * 16 + i * 1.3 + side) + .008 * Math.sin(time * .9 + i + side * 2) - S.whisk * .02 - Q.flare * .07) * u;
+        x += S.earFwd * .02 * u;
+        pts.push([side * x, y, lerp(.34, .08, u)]);
+      }
+      line3(pts, .7, 1.1);
+    });
+  }
+}
+
+function drawCollar() {
+  // band wrapping under the chin
+  for (const off of [0, .055]) {
+    const band = [];
+    for (let k = 0; k <= 20; k++) { const u = -1 + k / 10; band.push([u * .62, .935 + off - .26 * u * u, .12 - .1 * u * u]); }
+    line3(band, off ? .5 : .75, 1.3);
+  }
+  // bell and tag swing on a spring, driven by head movement
+  const hang = [0, .99, .16];
+  const at = (len, ang, dx = 0) => [hang[0] + dx + Math.sin(ang) * len, hang[1] + Math.cos(ang) * len, hang[2] + .01];
+  const tagC = at(.1, bellA * .7 + .25, .015);
+  line3([hang, tagC], .5, 1);
+  line3(circle3(tagC, .042, 18), .55, 1.1, true, .08);
+  const bc = at(.085, bellA);
+  line3([hang, at(.035, bellA)], .8, 1.1);
+  line3(circle3(bc, .05, 22), .95, 1.3, true, .12);
+  line3([[bc[0] - .045, bc[1] + .005, bc[2]], [bc[0] + .045, bc[1] + .005, bc[2]]], .5, 1);
+  dot3([bc[0], bc[1] + .025, bc[2]], 1.5, .8);
+  dot3([bc[0] - .018, bc[1] - .02, bc[2] + .01], 1.6, 1);
+  if (Math.abs(bellV) > 1.2) {           // little "jingle" sparks
+    const j = clamp((Math.abs(bellV) - 1.2) / 2);
+    for (let k = 0; k < 4; k++) {
+      const a = k / 4 * TAU + time * 3;
+      line3([[bc[0] + Math.cos(a) * .07, bc[1] + Math.sin(a) * .07, bc[2]], [bc[0] + Math.cos(a) * .1, bc[1] + Math.sin(a) * .1, bc[2]]], .6 * j, 1);
+    }
+  }
+}
+
+function drawMesh() {
+  const LM = cat.lm;
+  MESH.forEach(([a, b], idx) => {
+    const al = .07 + .11 * (.5 + .5 * Math.sin(time * 1.6 - idx * .7));
+    for (const s of [1, -1]) {
+      const pa = s > 0 ? LM[a] : mx(LM[a]), pb = s > 0 ? LM[b] : mx(LM[b]);
+      line3([pa, pb], al, .8);
+    }
+  });
+  for (const k in LM) for (const s of [1, -1]) dot3(s > 0 ? LM[k] : mx(LM[k]), 1.3, .45);
+}
+
+function drawFace() {
+  if (cat.collar) drawCollar();
+  line3(cat.headIn, .12, 1, true);
+  line3(cat.head, .95, 1.6, true, .035);
+  drawMesh();
+  if (cat.mark) { const mc = `hsl(${cat.mark[0]}, ${cat.mark[1]}%, ${cat.mark[2]}%)`; octx.strokeStyle = mc; octx.fillStyle = mc; }
+  cat.markings();
+  octx.strokeStyle = COL; octx.fillStyle = COL;
+  drawEar(1, tw[0]); drawEar(-1, tw[1]);
+  drawEye(1); drawEye(-1);
+  drawMuzzle();
+  if (Q.breath > .02) {                                     // the huff: puffs of air from the nostrils
+    for (const s of [1, -1]) for (let k = 0; k < 3; k++) {
+      const d = .06 + k * .06 + Q.breath * .05;
+      line3([[s * (.05 + k * .035), .3 + d * .6, .44], [s * (.08 + k * .05), .33 + d * .8, .44]], Q.breath * (.8 - k * .2), 1.2);
+    }
+  }
+  if (state === 'sleep') {
+    octx.font = `${Math.round(PSb * .09)}px ui-monospace, Consolas, monospace`;
+    octx.textAlign = 'center';
+    for (let k = 0; k < 3; k++) {
+      const ph = (time * .25 + k / 3) % 1;
+      const q = proj(.72 + ph * .3, -.78 - ph * .45, .1);
+      octx.globalAlpha = clamp((1 - ph) * Math.min(1, ph * 4) * .7 * S.bright / .38 * .5);
+      octx.fillText('z', q[0], q[1]);
+    }
+  }
+}
+
+/* ---------------------------------------------------------------- HUD ring */
+function drawRing() {
+  const B = S.bright, cx = PCX, cy = PCY, R = 1.33 * PSb;
+  const circ = (r) => { octx.beginPath(); octx.arc(cx, cy, r, 0, TAU); octx.stroke(); };
+  octx.lineWidth = LW * .8;
+  octx.globalAlpha = .16 * B; circ(R);
+  octx.globalAlpha = .09 * B; circ(R * .93);
+
+  // ticks
+  octx.beginPath();
+  for (let i = 0; i < 72; i++) {
+    const a = i / 72 * TAU + ringA * .3, l = i % 6 === 0 ? .05 : .022;
+    octx.moveTo(cx + Math.cos(a) * R, cy + Math.sin(a) * R);
+    octx.lineTo(cx + Math.cos(a) * R * (1 + l), cy + Math.sin(a) * R * (1 + l));
+  }
+  octx.globalAlpha = .3 * B; octx.stroke();
+
+  // rotating arcs
+  octx.lineWidth = LW * 2.2; octx.globalAlpha = .55 * B;
+  for (const [s, l] of [[0, .9], [2.2, .5], [3.7, 1.3]]) {
+    octx.beginPath(); octx.arc(cx, cy, R * .965, s + ringA, s + ringA + l); octx.stroke();
+  }
+  octx.lineWidth = LW * 1.1; octx.globalAlpha = .35 * B;
+  octx.setLineDash([4 * DPR, 9 * DPR]);
+  octx.beginPath(); octx.arc(cx, cy, R * .9, -ringA * .7, -ringA * .7 + TAU * .8); octx.stroke();
+  octx.setLineDash([]);
+
+  // audio bars (newest at top, history running down both sides)
+  const NB = 72, half = NB / 2;
+  octx.lineWidth = LW * 1.4; octx.globalAlpha = .75 * B;
+  octx.beginPath();
+  for (let i = 0; i < NB; i++) {
+    const j = i < half ? i : NB - 1 - i;
+    const v = hist[HN - 1 - Math.floor(j / half * (HN - 1))] || 0;
+    const len = (.012 + v * (.75 + .25 * Math.sin(i * 3.1 + time * 9)) * .16) * PSb;
+    const a = -Math.PI / 2 + i / NB * TAU, r0 = R * 1.065;
+    octx.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0);
+    octx.lineTo(cx + Math.cos(a) * (r0 + len), cy + Math.sin(a) * (r0 + len));
+  }
+  octx.stroke();
+
+  // thinking: orbiters + scan line
+  if (S.scan > .02) {
+    for (let k = 0; k < 3; k++) {
+      const a = time * 1.6 + k * TAU / 3;
+      octx.globalAlpha = .45 * S.scan * B; octx.lineWidth = LW * 1.6;
+      octx.beginPath(); octx.arc(cx, cy, R * .965, a - .5, a); octx.stroke();
+      octx.globalAlpha = S.scan * B;
+      octx.beginPath(); octx.arc(cx + Math.cos(a) * R * .965, cy + Math.sin(a) * R * .965, LW * 2.4, 0, TAU); octx.fill();
+    }
+    const y = Math.sin(time * 1.8) * .9 * PSb, hwid = Math.sqrt(Math.max(0, (R * .9) ** 2 - y * y));
+    octx.lineWidth = LW * 7; octx.globalAlpha = .08 * S.scan * B;
+    octx.beginPath(); octx.moveTo(cx - hwid, cy + y); octx.lineTo(cx + hwid, cy + y); octx.stroke();
+    octx.lineWidth = LW; octx.globalAlpha = .5 * S.scan * B; octx.stroke();
+  }
+
+  if (cfg.label) {
+    const txt = ('◇ ' + state + (mood !== 'neutral' ? ' · ' + mood : '') + (quirk ? ' · ' + quirk.name.replace(/([A-Z])/g, ' $1') : '')).toUpperCase().split('').join(' ');
+    octx.font = `${Math.max(9 * DPR, Math.round(PSb * .055))}px ui-monospace, Consolas, monospace`;
+    octx.textAlign = 'center'; octx.textBaseline = 'middle';
+    octx.globalAlpha = .65 * B;
+    octx.fillText(txt, cx, cy + R * 1.27);
+  }
+}
+
+/* ---------------------------------------------------------------- render */
+function render() {
+  const w = off.width, h = off.height;
+  octx.setTransform(1, 0, 0, 1, 0, 0);
+  octx.globalCompositeOperation = 'source-over';
+  octx.clearRect(0, 0, w, h);
+  COL = `hsl(${cfg.hue + S.hueShift}, ${cat.sat ?? 95}%, ${cat.light ?? 66}%)`;
+  octx.strokeStyle = COL; octx.fillStyle = COL; octx.lineJoin = 'round'; octx.lineCap = 'round';
+  computeProjection();
+  drawRing();
+  drawFace();
+
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.globalAlpha = 1;
+  ctx.clearRect(0, 0, w, h);
+  const flick = .95 + .05 * noise(time * 23, 4) - (Math.random() < .01 ? .15 : 0);
+  const A = clamp(boot * 1.3) * flick;
+  ctx.globalCompositeOperation = 'lighter';
+  if (hasFilter && cfg.glow > 0) {
+    const k = PSb / (200 * DPR);
+    ctx.filter = `blur(${(14 * cfg.glow * DPR * k).toFixed(1)}px)`; ctx.globalAlpha = clamp(.9 * A * Math.min(1, cfg.glow)); ctx.drawImage(off, 0, 0);
+    ctx.filter = `blur(${(3.5 * DPR * k).toFixed(1)}px)`; ctx.globalAlpha = clamp(.7 * A * Math.min(1, cfg.glow + .3)); ctx.drawImage(off, 0, 0);
+    ctx.filter = 'none';
+  }
+  ctx.globalAlpha = clamp(A); ctx.drawImage(off, 0, 0);
+  if (glitch > 0) {
+    const bh = Math.round(h * rand(.02, .07)), by = Math.round(glitchY * (h - bh)), dx = rand(-1, 1) * 12 * DPR;
+    ctx.globalAlpha = .6 * A; ctx.drawImage(off, 0, by, w, bh, dx, by, w, bh);
+  }
+  // scanlines cut out of the light, so they work on transparent backgrounds too
+  ctx.globalCompositeOperation = 'destination-out';
+  ctx.globalAlpha = .3; ctx.fillStyle = scanPat;
+  ctx.save(); ctx.translate(0, (time * 20 * DPR) % (3 * DPR)); ctx.fillRect(0, -8 * DPR, w, h + 16 * DPR); ctx.restore();
+  ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+}
+
+/* ---------------------------------------------------------------- public API */
+function logMsg(dir, obj) {
+  if (!cfg.debug) return;
+  const el = document.getElementById('log'); if (!el) return;
+  const line = document.createElement('div');
+  line.className = dir;
+  let txt = typeof obj === 'string' ? obj : JSON.stringify(obj);
+  if (txt.length > 90) txt = txt.slice(0, 87) + '...';
+  line.textContent = (dir === 'in' ? '← ' : '→ ') + txt;
+  el.appendChild(line);
+  while (el.children.length > 40) el.removeChild(el.firstChild);
+  el.scrollTop = el.scrollHeight;
+}
+function notify(obj) {
+  logMsg('out', obj);
+  try {
+    if (window.chrome && window.chrome.webview) window.chrome.webview.postMessage(obj);
+    else if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.on_avatar_event === 'function') window.pywebview.api.on_avatar_event(obj);
+    else if (window.parent && window.parent !== window) window.parent.postMessage(obj, '*');
+  } catch (e) { /* host not listening */ }
+}
+function setState(s) {
+  if (!STATES.includes(s) || s === state) return;
+  state = s; stateT = 0; nextSacc = 0; scheduleBlink();
+  if (s === 'listening') { tw[0] = tw[1] = .8; }
+  notify({ type: 'state', value: s });
+  refreshPanel();
+}
+function setMood(m) { if (MOODS.includes(m)) { mood = m; refreshPanel(); } }
+function setSource(s) {
+  if (!SOURCES.includes(s)) return;
+  source = s;
+  if (s === 'mic' && !mic) startMic().then(ok => { if (!ok) { source = 'sim'; refreshPanel(); } });
+  refreshPanel();
+}
+
+const Avatar = {
+  version: '0.1',
+  setState: s => { stopDemoIfUser(); setState(s); },
+  getState: () => state,
+  setMood: m => setMood(m),
+  setCat: name => {
+    const c = CATS[String(name).toLowerCase()];
+    if (!c) return;
+    cat = c;
+    if (!cfg.userHue) Avatar.setHue(c.hue);
+    tw[0] = tw[1] = .8;
+    refreshPanel();
+  },
+  getCat: () => cat.name,
+  quirk: name => { if (!name) { const l = cat.quirks || []; name = l[Math.floor(Math.random() * l.length)]; } startQuirk(name); },
+  quirks: () => (cat.quirks || []).filter((v, i, a) => a.indexOf(v) === i),
+  speakText: chunk => pushText(chunk),           // append streamed reply text (any chunk size)
+  endText: () => { tEnded = true; },              // reply finished: return to idle once caught up
+  stopText: () => stopText(),                     // cancel immediately
+  setTextSpeed: cps => { textCps = clamp(+cps || 15, 4, 60); },
+  viseme: (id, durationMs) => setViseme(id, durationMs),
+  cats: () => Object.keys(CATS),
+  setLevel: v => { hostLevel = clamp(+v || 0); hostTime = performance.now(); },
+  blink: () => startBlink(false),
+  twitch: (side = 'both') => { if (side !== 'left') tw[0] = 1; if (side !== 'right') tw[1] = 1; },
+  lookAt: (x = 0, y = 0, seconds = 1.2) => { lookOverride = { x: clamp(+x, -1, 1), y: clamp(+y, -1, 1), until: performance.now() + seconds * 1000 }; },
+  setHue: h => { cfg.hue = +h || 0; document.documentElement.style.setProperty('--hue', cfg.hue); refreshPanel(); },
+  setStyle: s => { cfg.style = s === 'points' ? 'points' : 'wire'; refreshPanel(); },
+  setGlow: g => { cfg.glow = clamp(+g, 0, 2); refreshPanel(); },
+  showDebug: b => { cfg.debug = !!b; panel.classList.toggle('hidden', !cfg.debug); },
+};
+let userDriven = false;
+function stopDemoIfUser() { if (demo && !userDriven) stopDemo(); }
+window.Avatar = Avatar;
+
+function handleMessage(m) {
+  if (m == null) return;
+  if (!(typeof m === 'object' && m.type === 'level') && typeof m !== 'number') logMsg('in', m);   // level is too chatty to log
+  if (typeof m === 'number') return Avatar.setLevel(m);
+  if (typeof m === 'string') {
+    if (STATES.includes(m)) return Avatar.setState(m);
+    try { m = JSON.parse(m); } catch (e) { return; }
+    if (typeof m === 'number') return Avatar.setLevel(m);
+  }
+  if (typeof m !== 'object') return;
+  const v = m.value;
+  switch (m.type) {
+    case 'state': Avatar.setState(v); break;
+    case 'mood': Avatar.setMood(v); break;
+    case 'cat': Avatar.setCat(v); break;
+    case 'quirk': Avatar.quirk(v); break;
+    case 'text': Avatar.speakText(v); break;
+    case 'textEnd': Avatar.endText(); break;
+    case 'textStop': Avatar.stopText(); break;
+    case 'textSpeed': Avatar.setTextSpeed(v); break;
+    case 'viseme': Avatar.viseme(v, m.duration); break;
+    case 'level': Avatar.setLevel(v); break;
+    case 'blink': Avatar.blink(); break;
+    case 'twitch': Avatar.twitch(v); break;
+    case 'lookAt': Avatar.lookAt(m.x, m.y, m.duration); break;
+    case 'hue': Avatar.setHue(v); break;
+    case 'style': Avatar.setStyle(v); break;
+    case 'glow': Avatar.setGlow(v); break;
+    case 'debug': Avatar.showDebug(v); break;
+  }
+}
+if (window.chrome && window.chrome.webview) window.chrome.webview.addEventListener('message', e => handleMessage(e.data));
+addEventListener('message', e => { if (!window.chrome || !window.chrome.webview || e.source === window.parent) handleMessage(e.data); });
+
+cv.addEventListener('click', e => {
+  const x = (e.clientX * DPR - PCX) / PSb, y = (e.clientY * DPR - PCY) / PSb;
+  if (Math.hypot(x, y) < 1.35) {
+    tw[0] = tw[1] = 1;
+    happyPulseUntil = performance.now() + 1400;
+    if (state === 'sleep') setState('idle');
+    notify({ type: 'click' });
+  }
+});
+
+/* ---------------------------------------------------------------- debug panel */
+const panel = document.getElementById('panel');
+const $ = id => document.getElementById(id);
+function buildRow(id, items, fn) {
+  const el = $(id);
+  for (const it of items) {
+    const b = document.createElement('button');
+    b.textContent = it; b.dataset.v = it;
+    b.onclick = () => { userDriven = true; fn(it); userDriven = false; };
+    el.appendChild(b);
+  }
+}
+buildRow('cats', Object.keys(CATS), c => Avatar.setCat(c));
+buildRow('states', STATES, s => { stopDemo(); setState(s); });
+buildRow('moods', MOODS, m => { stopDemo(); setMood(m); });
+buildRow('sources', SOURCES, s => setSource(s));
+buildRow('styles', ['wire', 'points'], s => Avatar.setStyle(s));
+$('lvl').oninput = e => { manual = +e.target.value; if (source !== 'manual') setSource('manual'); };
+$('hue').oninput = e => Avatar.setHue(e.target.value);
+$('glow').oninput = e => Avatar.setGlow(e.target.value);
+$('demo').onclick = () => demo ? stopDemo() : startDemo();
+$('blinkb').onclick = () => Avatar.blink();
+let streamTimer = null;
+$('sayb').onclick = () => {           // simulate an LLM streaming tokens into the avatar
+  clearTimeout(streamTimer); Avatar.stopText();
+  let rest = $('say').value;
+  const tick = () => {
+    if (!rest.length) { Avatar.endText(); return; }
+    const n = 2 + Math.floor(Math.random() * 5);
+    Avatar.speakText(rest.slice(0, n)); rest = rest.slice(n);
+    streamTimer = setTimeout(tick, 25 + Math.random() * 45);
+  };
+  tick();
+};
+$('stopb').onclick = () => { clearTimeout(streamTimer); Avatar.stopText(); };
+$('twitchb').onclick = () => Avatar.twitch('both');
+$('twl').onclick = () => Avatar.twitch('left');
+$('twr').onclick = () => Avatar.twitch('right');
+$('cps').oninput = e => { Avatar.setTextSpeed(e.target.value); refreshPanel(); };
+$('labelb').onclick = () => { cfg.label = !cfg.label; refreshPanel(); };
+$('bgb').onclick = () => { document.body.classList.toggle('checker'); refreshPanel(); };
+$('visb').onclick = () => {       // "hello there" as SAPI viseme IDs
+  const seq = [[12, 70], [4, 90], [14, 80], [8, 140], [0, 120], [19, 70], [12, 60], [4, 110], [13, 90], [0, 200]];
+  let t = 0;
+  for (const [id, d] of seq) { setTimeout(() => Avatar.viseme(id, d), t); t += d; }
+};
+{
+  const pad = $('gaze');
+  let down = false;
+  const aim = e => {
+    const r = pad.getBoundingClientRect();
+    const x = clamp((e.clientX - r.left) / r.width * 2 - 1, -1, 1), y = clamp((e.clientY - r.top) / r.height * 2 - 1, -1, 1);
+    Avatar.lookAt(x, y, 2);
+    $('gazedot').style.left = ((x + 1) * 50) + '%'; $('gazedot').style.top = ((y + 1) * 50) + '%';
+  };
+  pad.addEventListener('pointerdown', e => { down = true; pad.setPointerCapture(e.pointerId); aim(e); });
+  pad.addEventListener('pointermove', e => { if (down) aim(e); });
+  pad.addEventListener('pointerup', () => { down = false; setTimeout(() => { $('gazedot').style.left = '50%'; $('gazedot').style.top = '50%'; }, 2000); });
+}
+function showErr(t) { $('err').textContent = t; }
+function refreshPanel() {
+  const mark = (id, v) => { for (const b of $(id).children) b.classList.toggle('on', b.dataset.v === v); };
+  { const el = $('quirks'); const names = Avatar.quirks(); if (el.dataset.cat !== cat.name) { el.dataset.cat = cat.name; el.innerHTML = '';
+      for (const n of names) { const b = document.createElement('button'); b.textContent = n.replace(/([A-Z])/g, ' $1').toLowerCase(); b.onclick = () => { stopDemo(); setState('idle'); Avatar.quirk(n); }; el.appendChild(b); } } }
+  mark('cats', cat.name); mark('states', state); mark('moods', mood); mark('sources', source); mark('styles', cfg.style);
+  $('hue').value = cfg.hue; $('huev').textContent = Math.round(cfg.hue);
+  $('glow').value = cfg.glow; $('glowv').textContent = (+cfg.glow).toFixed(2);
+  $('cps').value = textCps; $('cpsv').textContent = Math.round(textCps);
+  $('labelb').classList.toggle('on', cfg.label);
+  $('bgb').classList.toggle('on', document.body.classList.contains('checker'));
+  $('demo').classList.toggle('on', !!demo); $('demo').textContent = demo ? '■ stop demo' : '▶ demo loop';
+}
+addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+  if (e.key === 'd' || e.key === 'D') Avatar.showDebug(!cfg.debug);
+  const n = parseInt(e.key, 10);
+  if (n >= 1 && n <= STATES.length) { stopDemo(); setState(STATES[n - 1]); }
+});
+document.documentElement.style.setProperty('--hue', cfg.hue);
+panel.classList.toggle('hidden', !cfg.debug);
+if (!cfg.debug) source = 'off';
+refreshPanel();
+
+/* ---------------------------------------------------------------- loop */
+let last = performance.now(), fpsAcc = 0, fpsN = 0;
+function frame(now) {
+  const dt = Math.min(.05, Math.max(0, (now - last) / 1000)); last = now;
+  time += dt; stateT += dt; boot = Math.min(1, boot + dt / 1.2);
+  update(dt, now);
+  render();
+  if (cfg.debug) {
+    $('meter').style.width = (level * 100).toFixed(1) + '%';
+    $('lvlv').textContent = level.toFixed(2);
+    fpsAcc += dt; fpsN++;
+    if (fpsAcc > .5) { $('fps').textContent = Math.round(fpsN / fpsAcc) + ' fps'; fpsAcc = 0; fpsN = 0; }
+  }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+notify({ type: 'ready', version: Avatar.version });
+})();
+</script>
+</body>
+</html>
