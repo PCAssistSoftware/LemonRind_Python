@@ -10,7 +10,13 @@ The main screen is shown in both themes. Everything else is shown in light mode,
 |---|---|
 | ![The chat screen in light mode](overview-light.png) | ![The chat screen in dark mode](overview-dark.png) |
 
-Left: your chats, in folders, with tags and a search box. Middle: the conversation. Right: statistics for the last reply and the whole chat, the tools used, and the view screens. Along the bottom: the knowledge base attached to this chat, the message box, and the context ring.
+Left: the avatar, then your chats, in folders, with tags and a search box. Middle: the conversation. Right: statistics for the last reply and the whole chat, the tools used, and the view screens. Along the bottom: the knowledge base attached to this chat, the message box, and the context ring.
+
+## The avatar
+
+![The three cats, and the avatar listening, thinking, speaking and asleep](avatar.png)
+
+The three cats to choose from (Settings > Interface), and what the avatar does during a chat: it listens while you type, thinks while the model works or a tool runs, speaks as the reply arrives (its mouth follows the words), and falls asleep when no model is loaded or nothing has happened for a while. It can also sit at the top of the stats panel instead, or be hidden.
 
 ## Chatting
 

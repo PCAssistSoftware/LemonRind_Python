@@ -13,7 +13,11 @@ It is a chat with an assistant that can *do* things. It streams its answers and 
 through MCP), remembers lasting facts about you, answers from your own documents, and runs saved jobs on a schedule. Each of those is a switchable module, and every one of them asks
 before it does anything that changes something.
 
-Lemon Rind also comes in [WPF, Avalonia and Blazor editions](https://github.com/PCAssistSoftware/LemonRind) (C# and VB.NET) with the same feature set. This is the Python edition, and it started as a learning project: the code is commented to explain the Python ideas as they appear.
+An animated holographic cat avatar keeps you company while it works: it listens while you type, thinks while the model works or a tool runs, speaks as the reply arrives, and dozes off when nothing is happening. Pick Genie, Jess or Sid.
+
+![The three cats, and the avatar listening, thinking, speaking and asleep](screenshots/avatar.png)
+
+This is the Python edition, the main one, and it started as a learning project: the code is commented to explain the Python ideas as they appear. There is also a [Blazor edition](https://github.com/PCAssistSoftware/LemonRind) in C#, which follows this one; the older WPF and Avalonia editions in the same repository are archived.
 
 ## What you need
 
@@ -167,7 +171,7 @@ These work with `lemonrind-web` (the web app) and `lemonrind` (the terminal chat
 - Viewers for exactly what the model is given: the **system prompt**, the **turn context** (what would be added if you pressed Send now) and the **tools sent**. A **log viewer** shows the app's
   log and Lemonade's own server log, with level and text filters, pause and copy
 - Light and dark themes, side panels you can resize by dragging, and a layout that works on a phone
-- An animated holographic cat that shows what the assistant is doing: listening while you type, thinking, speaking as the reply arrives, and asleep when no model is loaded. Choose Genie, Jess or Sid, and whether it sits at the top of the chat list or the stats panel, in Settings > Interface
+- An animated holographic cat avatar that shows what the assistant is doing: listening while you type, thinking, speaking as the reply arrives, and asleep when no model is loaded. Choose Genie, Jess or Sid, and whether it sits at the top of the chat list or the stats panel, in Settings > Interface
 
 ### Modules
 
