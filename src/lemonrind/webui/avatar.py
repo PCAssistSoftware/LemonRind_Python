@@ -61,7 +61,7 @@ def serve_avatar() -> None:
 
 
 def avatar_url(cat: str) -> str:
-    return f"{URL_PREFIX}/{PAGE}?debug=0&cat={cat}&cps={TEXT_SPEED}"
+    return f"{URL_PREFIX}/{PAGE}?debug=0&label=0&cat={cat}&cps={TEXT_SPEED}"
 
 
 class AvatarBrain:
